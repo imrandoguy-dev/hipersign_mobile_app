@@ -11,6 +11,7 @@ import '../activities/activity_form.dart';
 import '../activities/activity_list_screen.dart';
 import '../calendar/calendar_screen.dart';
 import '../customers/customers_screen.dart';
+import '../customers/dialer_sheet.dart';
 import '../trials/book_trial_screen.dart';
 import 'more_screen.dart';
 
@@ -116,13 +117,20 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     return Scaffold(
       body: IndexedStack(index: _tab, children: pages),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      // On the Customers tab the centre button is a dial pad; elsewhere it is "+" (quick actions).
       floatingActionButton: FloatingActionButton(
-        tooltip: 'Quick actions',
+        tooltip: _tab == 2 ? 'Dial pad' : 'Quick actions',
         backgroundColor: HsColors.accent,
         foregroundColor: HsColors.onAccent,
         shape: const CircleBorder(),
-        onPressed: _openQuickActions,
-        child: const Icon(Icons.add, size: 30),
+        onPressed: _tab == 2 ? () => openDialer(context) : _openQuickActions,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+          child: _tab == 2
+              ? const Icon(Icons.dialpad, key: ValueKey('dial'), size: 28)
+              : const Icon(Icons.add, key: ValueKey('add'), size: 30),
+        ),
       ),
       bottomNavigationBar: BottomAppBar(
         color: HsColors.background,
