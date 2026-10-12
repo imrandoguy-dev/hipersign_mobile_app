@@ -364,3 +364,42 @@ String fmtDuration(int seconds) {
   if (m >= 60) return '${m ~/ 60}:${(m % 60).toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   return '$m:${s.toString().padLeft(2, '0')}';
 }
+
+/// A business found on Google Maps for a phone number.
+class GooglePlace {
+  GooglePlace({required this.name, this.placeId, this.address, this.mapsUrl});
+
+  final String name;
+  final String? placeId;
+  final String? address;
+  final String? mapsUrl;
+
+  factory GooglePlace.fromJson(Map<String, dynamic> j) => GooglePlace(
+        name: j['name']?.toString() ?? '',
+        placeId: str(j['place_id']),
+        address: str(j['address']),
+        mapsUrl: str(j['maps_url']),
+      );
+}
+
+/// Who a dialed number belongs to: an ERP customer/lead, a Google business, or nobody yet.
+class NumberLookup {
+  NumberLookup({required this.phone, this.party, this.google, this.googleEnabled = false, this.googleError});
+
+  final String phone;
+  final Party? party;
+  final GooglePlace? google;
+  final bool googleEnabled;
+  final String? googleError;
+
+  /// A party the user may link calls to (another salesperson's private record is not).
+  Party? get linkable => party != null && party!.kind != 'Hidden' ? party : null;
+
+  factory NumberLookup.fromJson(Map<String, dynamic> j) => NumberLookup(
+        phone: j['phone']?.toString() ?? '',
+        party: j['party'] is Map ? Party.fromJson(Map<String, dynamic>.from(j['party'] as Map)) : null,
+        google: j['google'] is Map ? GooglePlace.fromJson(Map<String, dynamic>.from(j['google'] as Map)) : null,
+        googleEnabled: j['google_enabled'] == true,
+        googleError: str(j['google_error']),
+      );
+}

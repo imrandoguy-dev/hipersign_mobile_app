@@ -7,11 +7,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/nav.dart';
 import '../../app/theme.dart';
+import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../core/phone/direct_call.dart';
 import '../../core/recordings/recording_service.dart';
 import '../../shared/models/models.dart';
 import 'customer_detail_screen.dart';
+import 'new_lead.dart';
 
 /// Small phone-style keypad: type a number, then Call or WhatsApp.
 /// While typing, it looks the number up in ERPNext and shows who it belongs to.
@@ -51,7 +53,9 @@ class _DialerSheetState extends State<_DialerSheet> {
   String _number = '';
   Timer? _debounce;
   List<Party> _matches = [];
+  NumberLookup? _info; // full-number lookup: ERP party or Google business
   bool _looking = false;
+  bool _calling = false;
   int _lookupSeq = 0;
 
   bool get _usable => _clean(_number).replaceAll('+', '').length >= 7;
@@ -63,7 +67,10 @@ class _DialerSheetState extends State<_DialerSheet> {
   }
 
   void _set(String value) {
-    setState(() => _number = value);
+    setState(() {
+      _number = value;
+      _info = null;
+    });
     _debounce?.cancel();
     final digits = _clean(value).replaceAll('+', '');
     if (digits.length < 5) {
@@ -80,13 +87,28 @@ class _DialerSheetState extends State<_DialerSheet> {
     final seq = ++_lookupSeq;
     setState(() => _looking = true);
     try {
-      // Search by the last 10 digits so "+91 98470 12345" and "098470 12345" both match.
-      final q = digits.length > 10 ? digits.substring(digits.length - 10) : digits;
-      final page = await context.read<SessionController>().repo.searchParties(q, 'all');
+      final repo = context.read<SessionController>().repo;
+      if (digits.length >= 10) {
+        // Whole number: ERP first, then Google Maps for the business name.
+        final info = await repo.lookupNumber(_clean(_number));
+        if (!mounted || seq != _lookupSeq) return;
+        setState(() {
+          _info = info;
+          _matches = info.linkable != null ? [info.linkable!] : [];
+        });
+        return;
+      }
+      // Partial number: suggest customers whose number contains these digits.
+      final page = await repo.searchParties(digits, 'all');
       if (!mounted || seq != _lookupSeq) return;
       setState(() => _matches = page.items.take(3).toList());
     } catch (_) {
-      if (mounted && seq == _lookupSeq) setState(() => _matches = []);
+      if (mounted && seq == _lookupSeq) {
+        setState(() {
+          _matches = [];
+          _info = null;
+        });
+      }
     } finally {
       if (mounted && seq == _lookupSeq) setState(() => _looking = false);
     }
@@ -110,19 +132,48 @@ class _DialerSheetState extends State<_DialerSheet> {
     _set(_clean(text));
   }
 
+  /// "Save as new lead" (name typed, or Google's name pre-filled and editable).
+  Future<void> _newLead() async {
+    final info = _info;
+    if (info == null) return;
+    final repo = context.read<SessionController>().repo;
+    final lead = await askNewLead(context, repo, info.phone, google: info.google);
+    if (lead == null || !mounted) return;
+    setState(() {
+      _info = NumberLookup(phone: info.phone, party: lead, googleEnabled: info.googleEnabled);
+      _matches = [lead];
+    });
+  }
+
   Future<void> _call() async {
-    if (!_usable) return;
-    final number = _clean(_number);
-    // Link the recording to the customer only when the number clearly belongs to one;
-    // otherwise it can be linked later from the Recordings screen.
-    final match = _matches.length == 1 ? _matches.first : null;
-    await RecordingService.instance.noteCall(
-      number: number,
-      partyDoctype: match?.doctype,
-      party: match?.id,
-      partyName: match?.name,
-    );
-    await placeCall(number);
+    if (!_usable || _calling) return;
+    setState(() => _calling = true);
+    try {
+      final number = _clean(_number);
+      final repo = context.read<SessionController>().repo;
+      // Link the call (and its recording) to the customer only when the number clearly
+      // belongs to one; otherwise it can be linked later from the Recordings screen.
+      Party? party = _info?.linkable ?? (_matches.length == 1 ? _matches.first : null);
+      final google = _info?.google;
+      if (party == null && google != null && _info != null) {
+        // Unknown number, but Google knows the business: save it as a lead first.
+        try {
+          party = await repo.createLead(phone: _info!.phone, name: google.name, google: google);
+          showSnack('New lead: ${party.name}');
+        } on ApiException catch (e) {
+          showSnack('Lead not saved: ${e.message}', error: true);
+        }
+      }
+      await RecordingService.instance.noteCall(
+        number: number,
+        partyDoctype: party?.doctype,
+        party: party?.id,
+        partyName: party?.name,
+      );
+      await placeCall(number);
+    } finally {
+      if (mounted) setState(() => _calling = false);
+    }
   }
 
   Future<void> _whatsApp() async {
@@ -158,7 +209,7 @@ class _DialerSheetState extends State<_DialerSheet> {
               ),
             ),
           ),
-          _MatchLine(matches: _matches, looking: _looking, typed: _number),
+          _MatchLine(matches: _matches, looking: _looking, typed: _number, info: _info, onNewLead: _newLead),
           const SizedBox(height: 8),
           // Keypad
           for (final row in const [
@@ -195,7 +246,7 @@ class _DialerSheetState extends State<_DialerSheet> {
               icon: Icons.call,
               color: const Color(0xFF1FA855),
               filled: true,
-              enabled: _usable,
+              enabled: _usable && !_calling,
               onTap: _call,
             ),
             SizedBox(
@@ -221,11 +272,13 @@ class _DialerSheetState extends State<_DialerSheet> {
 }
 
 class _MatchLine extends StatelessWidget {
-  const _MatchLine({required this.matches, required this.looking, required this.typed});
+  const _MatchLine({required this.matches, required this.looking, required this.typed, this.info, this.onNewLead});
 
   final List<Party> matches;
   final bool looking;
   final String typed;
+  final NumberLookup? info;
+  final VoidCallback? onNewLead;
 
   @override
   Widget build(BuildContext context) {
@@ -262,10 +315,46 @@ class _MatchLine extends StatelessWidget {
       );
     } else if (looking) {
       child = const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2));
+    } else if (info?.google != null) {
+      final g = info!.google!;
+      child = InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onNewLead, // edit the name before saving
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(color: HsColors.completed, borderRadius: BorderRadius.circular(14)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.storefront_outlined, size: 18, color: HsColors.onPastel),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(g.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: HsColors.onPastel, fontWeight: FontWeight.w700)),
+                Text(
+                  'Google${g.address != null ? ' · ${g.address}' : ''} · new lead when you call',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: HsColors.onPastel, fontSize: 11.5),
+                ),
+              ]),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.edit_outlined, size: 16, color: HsColors.onPastel),
+          ]),
+        ),
+      );
+    } else if (info != null) {
+      child = TextButton.icon(
+        onPressed: onNewLead,
+        icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+        label: Text(info!.googleError != null ? 'Not in ERP (Google lookup failed) - save as new lead' : 'Not in ERP - save as new lead'),
+      );
     } else {
       child = const SizedBox.shrink();
     }
-    return SizedBox(height: 34, child: Center(child: child));
+    return ConstrainedBox(constraints: const BoxConstraints(minHeight: 34), child: Center(child: child));
   }
 }
 

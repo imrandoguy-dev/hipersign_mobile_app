@@ -12,6 +12,7 @@ import '../../core/repository.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/common.dart';
 import '../customers/customer_detail_screen.dart';
+import '../customers/new_lead.dart';
 import '../customers/party_picker.dart';
 import 'recording_widgets.dart';
 
@@ -121,10 +122,46 @@ class _RecordingsScreenState extends State<RecordingsScreen> with WidgetsBinding
     }
   }
 
+  /// Link an unlinked call: pick an existing customer/lead, or create a new lead
+  /// (name pre-filled from Google Maps when the number is found there).
   Future<void> _link(CallEntry e) async {
-    final p = await pickParty(context);
+    final repo = context.read<SessionController>().repo;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.search),
+            title: const Text('Existing customer or lead'),
+            onTap: () => Navigator.pop(ctx, 'existing'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_add_alt_1_outlined),
+            title: const Text('New lead'),
+            subtitle: Text(e.number),
+            onTap: () => Navigator.pop(ctx, 'new'),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    Party? p;
+    if (choice == 'existing') {
+      p = await pickParty(context);
+    } else {
+      NumberLookup? info;
+      try {
+        info = await repo.lookupNumber(e.number);
+      } on ApiException {
+        info = null;
+      }
+      if (!mounted) return;
+      p = info?.linkable ?? await askNewLead(context, repo, info?.phone ?? e.number, google: info?.google);
+    }
     if (p == null || !mounted) return;
-    await _service.link(context.read<SessionController>().repo, e, p);
+    await _service.link(repo, e, p);
   }
 
   /// Pick one of the phone's recent call recordings and save it to a customer.

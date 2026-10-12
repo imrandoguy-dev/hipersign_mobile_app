@@ -233,6 +233,22 @@ class Repository {
     return Booking.fromJson(Map<String, dynamic>.from((data as Map)['booking'] as Map));
   }
 
+  /// ERP customer/lead for this number, else the Google Maps business (server-side lookup).
+  Future<NumberLookup> lookupNumber(String phone) async =>
+      NumberLookup.fromJson(Map<String, dynamic>.from(await api.get('customers.lookup_number', {'phone': phone}) as Map));
+
+  /// Creates a CRM Lead for an unknown number (or returns the existing one - never duplicates).
+  Future<Party> createLead({required String phone, required String name, GooglePlace? google}) async {
+    final data = Map<String, dynamic>.from(await api.post('customers.create_lead', {
+      'phone': phone,
+      'name': name,
+      'address': google?.address,
+      'maps_url': google?.mapsUrl,
+      'place_id': google?.placeId,
+    }) as Map);
+    return Party.fromJson(Map<String, dynamic>.from(data['party'] as Map));
+  }
+
   // ------------------------------------------------------------ call recordings
 
   Future<PageResult<CallRecording>> recordings({String? partyDoctype, String? party, String? cursor}) async {
