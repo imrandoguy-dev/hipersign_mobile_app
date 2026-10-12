@@ -86,3 +86,27 @@ Future<void> openAppSettings() async {
     await _channel.invokeMethod<bool>('openAppSettings');
   } catch (_) {}
 }
+
+// ------------------------------------------------------------ phone links opened in Hipersign
+
+/// Number from the phone link that opened the app (e.g. Google's Call button), once.
+Future<String?> takeDialIntent() async {
+  if (!Platform.isAndroid) return null;
+  try {
+    return await _channel.invokeMethod<String>('takeDialIntent');
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Called when a phone link opens Hipersign while it is already running.
+void onDialIntent(void Function(String number)? handler) {
+  _channel.setMethodCallHandler(handler == null
+      ? null
+      : (call) async {
+          if (call.method == 'dialIntent' && call.arguments is String) {
+            handler(call.arguments as String);
+            await takeDialIntent(); // consumed
+          }
+        });
+}

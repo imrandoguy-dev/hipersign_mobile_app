@@ -82,7 +82,14 @@ class _PartyPickerState extends State<_PartyPicker> {
           ListTile(
             leading: CircleAvatar(
               backgroundColor: HsColors.cardHigh,
-              child: Icon(p.kind == 'Lead' ? Icons.person_add_alt : Icons.business, size: 20),
+              child: Icon(
+                switch (p.kind) {
+                  'Lead' => Icons.person_add_alt,
+                  'Deal' => Icons.handshake_outlined,
+                  _ => Icons.business,
+                },
+                size: 20,
+              ),
             ),
             title: Text(p.name),
             subtitle: Text([p.kind, if (p.subtitle != null) p.subtitle!, if (p.primaryPhone != null) p.primaryPhone!.e164 ?? p.primaryPhone!.raw].join(' - ')),

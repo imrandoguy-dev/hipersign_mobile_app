@@ -149,7 +149,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Wrap(spacing: 8, children: [
-                  for (final k in const [('all', 'All'), ('customer', 'Customers'), ('lead', 'Leads')])
+                  for (final k in const [('all', 'All'), ('customer', 'Customers'), ('lead', 'Leads'), ('deal', 'Deals')])
                     ChoiceChip(
                       label: Text(k.$2),
                       selected: _kind == k.$1,
@@ -201,7 +201,11 @@ class _PartyTile extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
             child: Row(children: [
               CircleAvatar(
-                backgroundColor: p.kind == 'Lead' ? HsColors.rescheduled : HsColors.active,
+                backgroundColor: switch (p.kind) {
+                  'Lead' => HsColors.rescheduled,
+                  'Deal' => HsColors.pending,
+                  _ => HsColors.active,
+                },
                 foregroundColor: HsColors.onPastel,
                 child: Text(p.name.isEmpty ? '?' : p.name[0].toUpperCase()),
               ),

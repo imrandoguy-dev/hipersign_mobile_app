@@ -6,6 +6,7 @@ import '../../app/refresh.dart';
 import '../../app/theme.dart';
 import '../../core/auth/session.dart';
 import '../../core/notifications/notification_service.dart';
+import '../../core/phone/direct_call.dart';
 import '../../core/recordings/recording_service.dart';
 import '../../core/updates/update_service.dart';
 import '../activities/activity_form.dart';
@@ -37,7 +38,24 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       if (pending != null) navigatorKey.currentState?.pushNamed(pending);
       _checkForUpdate();
       _syncRecordings(ask: true);
+      _openPhoneLink();
     });
+    // Google's Call button (or any phone link) while Hipersign is already open.
+    onDialIntent((number) => _showDialer(number));
+  }
+
+  /// Hipersign was opened from a phone link: show the dial pad with that number.
+  Future<void> _openPhoneLink() async {
+    final number = await takeDialIntent();
+    if (number != null && mounted) _showDialer(number);
+  }
+
+  void _showDialer(String number) {
+    final ctx = navigatorKey.currentContext ?? context;
+    // Close any open dial pad first so the new number is shown.
+    Navigator.of(ctx).popUntil((route) => route is! PopupRoute);
+    if (mounted) setState(() => _tab = 2);
+    openDialer(ctx, number: number);
   }
 
   /// After a call the user comes back to the app: find and upload that call's recording.
@@ -59,6 +77,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     NotificationService.instance.onOpenRoute = null;
+    onDialIntent(null);
     super.dispose();
   }
 
@@ -71,6 +90,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final session = context.read<SessionController>();
     bumpRefresh();
     _checkForUpdate();
+    _openPhoneLink();
     // Refresh roles/features first (FR-005), so call recording sees the server's latest settings.
     try {
       await session.refreshProfile();

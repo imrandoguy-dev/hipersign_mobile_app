@@ -17,12 +17,12 @@ import 'new_lead.dart';
 
 /// Small phone-style keypad: type a number, then Call or WhatsApp.
 /// While typing, it looks the number up in ERPNext and shows who it belongs to.
-Future<void> openDialer(BuildContext context) => showModalBottomSheet<void>(
+Future<void> openDialer(BuildContext context, {String? number}) => showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: HsColors.background,
-      builder: (_) => const _DialerSheet(),
+      builder: (_) => _DialerSheet(initialNumber: number),
     );
 
 /// Digits the user typed, keeping a leading +.
@@ -43,7 +43,10 @@ String _whatsappNumber(String typed) {
 }
 
 class _DialerSheet extends StatefulWidget {
-  const _DialerSheet();
+  const _DialerSheet({this.initialNumber});
+
+  /// Pre-filled number, e.g. from Google's Call button.
+  final String? initialNumber;
 
   @override
   State<_DialerSheet> createState() => _DialerSheetState();
@@ -59,6 +62,17 @@ class _DialerSheetState extends State<_DialerSheet> {
   int _lookupSeq = 0;
 
   bool get _usable => _clean(_number).replaceAll('+', '').length >= 7;
+
+  @override
+  void initState() {
+    super.initState();
+    final n = widget.initialNumber;
+    if (n != null && n.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _set(_clean(n));
+      });
+    }
+  }
 
   @override
   void dispose() {

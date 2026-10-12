@@ -72,6 +72,27 @@ void _androidManifest() {
     s = s.replaceFirst('<application', '<uses-feature android:name="android.hardware.telephony" android:required="false"/>\n    <application');
   }
 
+  if (!s.contains('hm-dial-handler')) {
+    // Lets Hipersign open phone links (e.g. the Call button in Google Search / Maps):
+    // Android then offers Hipersign next to the phone app.
+    const dial = '''
+            <!-- hm-dial-handler -->
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="tel" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
+''';
+    s = s.replaceFirst('</activity>', '$dial        </activity>');
+  }
+
   if (!s.contains('ScheduledNotificationReceiver')) {
     const receivers = '''
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
@@ -264,7 +285,7 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('findRecordings')) return;
+  if (current.contains('takeDialIntent')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
@@ -279,6 +300,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.MediaStore
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -292,7 +314,10 @@ import java.io.File
 //  - findRecordings:  audio files added or changed in a time window (MediaStore)
 //  - copyRecording:   copy one recording into the app cache for upload / playback
 //  - openAppSettings: open this app's system settings page
+//  - takeDialIntent / dialIntent: a tel: link opened Hipersign (Google's Call button)
 class MainActivity : FlutterActivity() {
+    private var channel: MethodChannel? = null
+    private var pendingDial: String? = null // number from a tel: link (e.g. Google's Call button)
     private var pendingNumber: String? = null
     private var pendingCallResult: MethodChannel.Result? = null
     private var pendingAudioResult: MethodChannel.Result? = null
@@ -306,8 +331,14 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "hipersign/phone").setMethodCallHandler { call, result ->
+        val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "hipersign/phone")
+        channel = ch
+        ch.setMethodCallHandler { call, result ->
             when (call.method) {
+                "takeDialIntent" -> {
+                    result.success(pendingDial)
+                    pendingDial = null
+                }
                 "call" -> {
                     val number = call.argument<String>("number")
                     if (number.isNullOrBlank()) {
@@ -379,6 +410,26 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        dialNumberFrom(intent)?.let { pendingDial = it }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val number = dialNumberFrom(intent) ?: return
+        pendingDial = number
+        channel?.invokeMethod("dialIntent", number)
+    }
+
+    private fun dialNumberFrom(i: Intent?): String? {
+        if (i == null) return null
+        if (i.action != Intent.ACTION_DIAL && i.action != Intent.ACTION_VIEW) return null
+        val data = i.data ?: return null
+        if (data.scheme != "tel") return null
+        return Uri.decode(data.schemeSpecificPart ?: "").trim().ifEmpty { null }
     }
 
     private fun placeCall(number: String): String = try {
