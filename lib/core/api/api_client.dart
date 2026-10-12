@@ -148,6 +148,14 @@ class ApiClient {
       if (e.isSessionProblem) onSessionExpired?.call();
       throw e;
     }
+    // Endpoint missing on the server: the app is newer than the server's Hipersign Mobile.
+    final raw = utf8.decode(r.bodyBytes, allowMalformed: true);
+    if ((r.statusCode == 417 || r.statusCode == 404) &&
+        (raw.contains('Failed to get method') || raw.contains('has no attribute') || raw.contains('No module named'))) {
+      throw ApiException('NOT_FOUND',
+          'This needs the latest Hipersign Mobile update on the server. Ask your admin to update it (Press > Update Available).',
+          r.statusCode);
+    }
     // Not our envelope: Frappe refused before reaching the endpoint (session gone).
     if (r.statusCode == 401 || r.statusCode == 403) {
       onSessionExpired?.call();
