@@ -7,8 +7,10 @@ import '../../app/nav.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
+import '../../core/callerid/caller_directory.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/notifications/reminder_planner.dart';
+import '../../core/phone/direct_call.dart';
 import '../../core/updates/update_service.dart';
 import '../recordings/recordings_screen.dart';
 
@@ -174,6 +176,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ]),
           ),
         ]),
+        if (Platform.isAndroid && (session.profile?.can('customers') ?? false)) ...[
+          const _Header('Caller pop-up'),
+          const _CallerIdCard(),
+        ],
         if (Platform.isAndroid && (session.profile?.can('call_recordings') ?? false)) ...[
           const _Header('Call recordings'),
           _Card(children: [
@@ -291,5 +297,113 @@ class _VersionTileState extends State<_VersionTile> {
               : TextButton(onPressed: _check, child: const Text('Check for updates')))
           : null,
     );
+  }
+}
+
+/// Caller pop-up: shows the ERPNext customer / lead / deal over the call screen.
+class _CallerIdCard extends StatefulWidget {
+  const _CallerIdCard();
+
+  @override
+  State<_CallerIdCard> createState() => _CallerIdCardState();
+}
+
+class _CallerIdCardState extends State<_CallerIdCard> with WidgetsBindingObserver {
+  CallerIdStatus? _status;
+  bool _syncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh(); // back from phone settings
+  }
+
+  Future<void> _refresh() async {
+    final s = await callerIdStatus();
+    if (mounted) setState(() => _status = s);
+  }
+
+  Future<void> _sync() async {
+    setState(() => _syncing = true);
+    try {
+      await syncCallerDirectory(context.read<SessionController>().repo, force: true);
+      showSnack('Caller names updated');
+    } on ApiException catch (e) {
+      showSnack(e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+      _refresh();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _status;
+    if (s == null) return const _Card(children: [ListTile(title: Text('Checking...'))]);
+    return _Card(children: [
+      SwitchListTile(
+        title: const Text('Show caller pop-up'),
+        subtitle: const Text('Customer, lead or deal name while a call rings or is dialled'),
+        value: s.enabled,
+        onChanged: (v) async {
+          await setCallerIdEnabled(v);
+          _refresh();
+        },
+      ),
+      ListTile(
+        leading: Icon(s.phone ? Icons.check_circle : Icons.phone_locked_outlined,
+            color: s.phone ? HsColors.completed : HsColors.warning),
+        title: const Text('Phone & call log access'),
+        subtitle: Text(s.phone ? 'Allowed' : 'Needed to see who is calling'),
+        trailing: s.phone
+            ? null
+            : TextButton(
+                onPressed: () async {
+                  final r = await requestCallerIdPermissions();
+                  if (r != null && !r.phone) {
+                    showSnack('Allow "Phone" and "Call logs" for Hipersign in phone settings.', error: true);
+                    await openAppSettings();
+                  }
+                  _refresh();
+                },
+                child: const Text('Allow'),
+              ),
+      ),
+      ListTile(
+        leading: Icon(s.overlay ? Icons.check_circle : Icons.layers_outlined,
+            color: s.overlay ? HsColors.completed : HsColors.warning),
+        title: const Text('Display over other apps'),
+        subtitle: Text(s.overlay ? 'Allowed - the card shows over the call screen' : 'Off - a notification is shown instead'),
+        trailing: s.overlay ? null : TextButton(onPressed: openOverlaySettings, child: const Text('Allow')),
+      ),
+      ListTile(
+        leading: const Icon(Icons.contacts_outlined),
+        title: Text('${s.entries} numbers from ERPNext'),
+        subtitle: const Text('Updated automatically every 30 minutes'),
+        trailing: _syncing
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+            : TextButton(onPressed: _sync, child: const Text('Update now')),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 14),
+        child: Text(
+          'Xiaomi / Redmi / POCO: also open phone Settings > Apps > Hipersign > Other permissions and allow '
+          '"Display pop-up windows while running in the background", and turn on Autostart.',
+          style: TextStyle(fontSize: 12.5, color: HsColors.textSecondary, height: 1.4),
+        ),
+      ),
+    ]);
   }
 }

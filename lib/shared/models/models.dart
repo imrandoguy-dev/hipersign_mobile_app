@@ -403,3 +403,20 @@ class NumberLookup {
         googleError: str(j['google_error']),
       );
 }
+
+/// A business shared to Hipersign from Google, resolved by the server.
+class SharedPlace {
+  SharedPlace({this.phone, this.party, this.google, this.error});
+
+  final String? phone;
+  final Party? party;
+  final GooglePlace? google;
+  final String? error;
+
+  factory SharedPlace.fromJson(Map<String, dynamic> j) => SharedPlace(
+        phone: str(j['phone']),
+        party: j['party'] is Map ? Party.fromJson(Map<String, dynamic>.from(j['party'] as Map)) : null,
+        google: j['google'] is Map ? GooglePlace.fromJson(Map<String, dynamic>.from(j['google'] as Map)) : null,
+        error: str(j['error']),
+      );
+}

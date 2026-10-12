@@ -5,6 +5,7 @@ import '../../app/nav.dart';
 import '../../app/refresh.dart';
 import '../../app/theme.dart';
 import '../../core/auth/session.dart';
+import '../../core/callerid/caller_directory.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/phone/direct_call.dart';
 import '../../core/recordings/recording_service.dart';
@@ -12,6 +13,7 @@ import '../../core/updates/update_service.dart';
 import '../activities/activity_form.dart';
 import '../activities/activity_list_screen.dart';
 import '../calendar/calendar_screen.dart';
+import '../customers/customer_detail_screen.dart';
 import '../customers/customers_screen.dart';
 import '../customers/dialer_sheet.dart';
 import '../trials/book_trial_screen.dart';
@@ -37,25 +39,57 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       final pending = notifications.takePendingRoute();
       if (pending != null) navigatorKey.currentState?.pushNamed(pending);
       _checkForUpdate();
-      _syncRecordings(ask: true);
       _openPhoneLink();
+      // One permission prompt at a time: recordings first, then the caller pop-up.
+      _syncRecordings(ask: true).whenComplete(() async {
+        await askCallerIdOnce();
+        await _syncCallerId();
+      });
     });
-    // Google's Call button (or any phone link) while Hipersign is already open.
-    onDialIntent((number) => _showDialer(number));
+    // Phone links, shares from Google and caller pop-up taps while Hipersign is open.
+    setNativeHandlers(
+      onDial: (number) => _showDialer(number: number),
+      onShare: (text) => _showDialer(shared: text),
+      onOpen: _openParty,
+    );
   }
 
-  /// Hipersign was opened from a phone link: show the dial pad with that number.
+  /// Hipersign was opened from a phone link, a share or the caller pop-up.
   Future<void> _openPhoneLink() async {
     final number = await takeDialIntent();
-    if (number != null && mounted) _showDialer(number);
+    if (number != null && mounted) _showDialer(number: number);
+    final shared = await takeShareIntent();
+    if (shared != null && mounted) _showDialer(shared: shared);
+    final party = await takeOpenIntent();
+    if (party != null && mounted) _openParty(party);
   }
 
-  void _showDialer(String number) {
+  void _showDialer({String? number, String? shared}) {
     final ctx = navigatorKey.currentContext ?? context;
     // Close any open dial pad first so the new number is shown.
     Navigator.of(ctx).popUntil((route) => route is! PopupRoute);
     if (mounted) setState(() => _tab = 2);
-    openDialer(ctx, number: number);
+    openDialer(ctx, number: number, sharedText: shared);
+  }
+
+  void _openParty(Map<String, String> p) {
+    final nav = navigatorKey.currentState;
+    if (nav == null || p['doctype'] == null || p['id'] == null) return;
+    nav.push(MaterialPageRoute(
+      builder: (_) => CustomerDetailScreen(doctype: p['doctype']!, name: p['id']!, title: p['name'] ?? p['id']!),
+    ));
+  }
+
+  /// Names for the caller pop-up (refreshed at most every 30 minutes).
+  Future<void> _syncCallerId() async {
+    if (!mounted) return;
+    final session = context.read<SessionController>();
+    if (!(session.profile?.can('customers') ?? false)) return;
+    try {
+      await syncCallerDirectory(session.repo);
+    } catch (_) {
+      // Offline: the pop-up keeps using the last copy.
+    }
   }
 
   /// After a call the user comes back to the app: find and upload that call's recording.
@@ -77,7 +111,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     NotificationService.instance.onOpenRoute = null;
-    onDialIntent(null);
+    setNativeHandlers();
     super.dispose();
   }
 
@@ -91,6 +125,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     bumpRefresh();
     _checkForUpdate();
     _openPhoneLink();
+    _syncCallerId();
     // Refresh roles/features first (FR-005), so call recording sees the server's latest settings.
     try {
       await session.refreshProfile();

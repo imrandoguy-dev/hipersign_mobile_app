@@ -87,26 +87,89 @@ Future<void> openAppSettings() async {
   } catch (_) {}
 }
 
-// ------------------------------------------------------------ phone links opened in Hipersign
+// ------------------------------------------------------------ links / shares that open Hipersign
 
-/// Number from the phone link that opened the app (e.g. Google's Call button), once.
-Future<String?> takeDialIntent() async {
+Future<T?> _take<T>(String method) async {
   if (!Platform.isAndroid) return null;
   try {
-    return await _channel.invokeMethod<String>('takeDialIntent');
+    return await _channel.invokeMethod<T>(method);
   } catch (_) {
     return null;
   }
 }
 
-/// Called when a phone link opens Hipersign while it is already running.
-void onDialIntent(void Function(String number)? handler) {
-  _channel.setMethodCallHandler(handler == null
-      ? null
-      : (call) async {
-          if (call.method == 'dialIntent' && call.arguments is String) {
-            handler(call.arguments as String);
-            await takeDialIntent(); // consumed
-          }
-        });
+/// Number from the phone link that opened the app (e.g. Google's Call button), once.
+Future<String?> takeDialIntent() => _take<String>('takeDialIntent');
+
+/// Text shared to Hipersign (a business from Google Search / Maps), once.
+Future<String?> takeShareIntent() => _take<String>('takeShareIntent');
+
+/// {doctype, id, name} when the caller pop-up was tapped, once.
+Future<Map<String, String>?> takeOpenIntent() async {
+  final m = await _take<Map<dynamic, dynamic>>('takeOpenIntent');
+  return m?.map((k, v) => MapEntry(k.toString(), v.toString()));
+}
+
+/// Handlers for links / shares / pop-up taps that arrive while Hipersign is open.
+void setNativeHandlers({
+  void Function(String number)? onDial,
+  void Function(String text)? onShare,
+  void Function(Map<String, String> party)? onOpen,
+}) {
+  if (onDial == null && onShare == null && onOpen == null) {
+    _channel.setMethodCallHandler(null);
+    return;
+  }
+  _channel.setMethodCallHandler((call) async {
+    switch (call.method) {
+      case 'dialIntent':
+        await takeDialIntent(); // consumed
+        if (call.arguments is String) onDial?.call(call.arguments as String);
+      case 'shareIntent':
+        await takeShareIntent();
+        if (call.arguments is String) onShare?.call(call.arguments as String);
+      case 'openParty':
+        await takeOpenIntent();
+        if (call.arguments is Map) {
+          onOpen?.call((call.arguments as Map).map((k, v) => MapEntry(k.toString(), v.toString())));
+        }
+    }
+  });
+}
+
+// ------------------------------------------------------------ caller pop-up (Android)
+
+class CallerIdStatus {
+  CallerIdStatus(Map m)
+      : phone = m['phone'] == true,
+        overlay = m['overlay'] == true,
+        enabled = m['enabled'] != false,
+        entries = (m['entries'] as num?)?.toInt() ?? 0;
+
+  final bool phone; // can see who is calling / being called
+  final bool overlay; // can draw the card over the call screen (else a notification is used)
+  final bool enabled;
+  final int entries; // numbers known from ERPNext
+}
+
+Future<CallerIdStatus?> callerIdStatus() async {
+  final m = await _take<Map<dynamic, dynamic>>('callerIdStatus');
+  return m == null ? null : CallerIdStatus(m);
+}
+
+Future<CallerIdStatus?> requestCallerIdPermissions() async {
+  final m = await _take<Map<dynamic, dynamic>>('requestCallerIdPermissions');
+  return m == null ? null : CallerIdStatus(m);
+}
+
+Future<void> openOverlaySettings() => _take<bool>('openOverlaySettings');
+
+Future<void> saveCallerDirectory(String json) async {
+  if (!Platform.isAndroid) return;
+  await _channel.invokeMethod<bool>('saveCallerDirectory', {'json': json});
+}
+
+Future<void> setCallerIdEnabled(bool enabled) async {
+  if (!Platform.isAndroid) return;
+  await _channel.invokeMethod<bool>('setCallerIdEnabled', {'enabled': enabled});
 }

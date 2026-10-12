@@ -55,6 +55,11 @@ void _androidManifest() {
     'android.permission.REQUEST_INSTALL_PACKAGES', // in-app updates (sideloaded builds)
     'android.permission.CALL_PHONE', // place calls directly, no "choose an app" screen
     'android.permission.READ_MEDIA_AUDIO', // find the phone's own call recordings (Android 13+)
+    // Caller pop-up: who is calling / being called, shown over the call screen
+    'android.permission.READ_PHONE_STATE',
+    'android.permission.READ_CALL_LOG',
+    'android.permission.PROCESS_OUTGOING_CALLS',
+    'android.permission.SYSTEM_ALERT_WINDOW',
   ];
   final current = s;
   final missing = perms.where((p) => !current.contains('"$p"')).map((p) => '    <uses-permission android:name="$p"/>').join('\n');
@@ -91,6 +96,31 @@ void _androidManifest() {
             </intent-filter>
 ''';
     s = s.replaceFirst('</activity>', '$dial        </activity>');
+  }
+
+  if (!s.contains('hm-share-handler')) {
+    // "Share" a business from Google Search / Maps to Hipersign.
+    const share = '''
+            <!-- hm-share-handler -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+''';
+    s = s.replaceFirst('</activity>', '$share        </activity>');
+  }
+
+  if (!s.contains('CallerIdReceiver')) {
+    const receiver = '''
+        <receiver android:name=".CallerIdReceiver" android:exported="true">
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.PHONE_STATE" />
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+            </intent-filter>
+        </receiver>
+''';
+    s = s.replaceFirst('</application>', '$receiver    </application>');
   }
 
   if (!s.contains('ScheduledNotificationReceiver')) {
@@ -285,10 +315,11 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('takeDialIntent')) return;
+  if (current.contains('takeShareIntent')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
+  _write('${file.parent.path}/CallerId.kt', _callerId.replaceFirst('__PACKAGE__', pkg), 'CallerId.kt (caller pop-up)');
 }
 
 const _mainActivity = r'''
@@ -315,9 +346,15 @@ import java.io.File
 //  - copyRecording:   copy one recording into the app cache for upload / playback
 //  - openAppSettings: open this app's system settings page
 //  - takeDialIntent / dialIntent: a tel: link opened Hipersign (Google's Call button)
+//  - takeShareIntent / shareIntent: text shared to Hipersign (a business from Google Search / Maps)
+//  - takeOpenIntent / openParty: the caller pop-up was tapped
+//  - callerIdStatus / requestCallerIdPermissions / openOverlaySettings / saveCallerDirectory / setCallerIdEnabled
 class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
     private var pendingDial: String? = null // number from a tel: link (e.g. Google's Call button)
+    private var pendingShare: String? = null // text shared to Hipersign
+    private var pendingOpen: Map<String, String>? = null // party to open (from the caller pop-up)
+    private var pendingCallerIdResult: MethodChannel.Result? = null
     private var pendingNumber: String? = null
     private var pendingCallResult: MethodChannel.Result? = null
     private var pendingAudioResult: MethodChannel.Result? = null
@@ -338,6 +375,51 @@ class MainActivity : FlutterActivity() {
                 "takeDialIntent" -> {
                     result.success(pendingDial)
                     pendingDial = null
+                }
+                "takeShareIntent" -> {
+                    result.success(pendingShare)
+                    pendingShare = null
+                }
+                "takeOpenIntent" -> {
+                    result.success(pendingOpen)
+                    pendingOpen = null
+                }
+                "callerIdStatus" -> result.success(callerIdStatus())
+                "requestCallerIdPermissions" -> {
+                    val missing = CallerId.phonePermissions.filter { !granted(it) }
+                    if (missing.isEmpty()) {
+                        result.success(callerIdStatus())
+                    } else {
+                        pendingCallerIdResult?.success(callerIdStatus())
+                        pendingCallerIdResult = result
+                        requestPermissions(missing.toTypedArray(), CALLER_ID_REQUEST)
+                    }
+                }
+                "openOverlaySettings" -> {
+                    try {
+                        startActivity(
+                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "saveCallerDirectory" -> {
+                    val json = call.argument<String>("json") ?: "{}"
+                    Thread {
+                        try {
+                            CallerId.saveDirectory(applicationContext, json)
+                            runOnUiThread { result.success(true) }
+                        } catch (e: Exception) {
+                            runOnUiThread { result.error("SAVE_FAILED", e.message, null) }
+                        }
+                    }.start()
+                }
+                "setCallerIdEnabled" -> {
+                    CallerId.setEnabled(applicationContext, call.argument<Boolean>("enabled") ?: true)
+                    result.success(true)
                 }
                 "call" -> {
                     val number = call.argument<String>("number")
@@ -415,14 +497,45 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         dialNumberFrom(intent)?.let { pendingDial = it }
+        sharedTextFrom(intent)?.let { pendingShare = it }
+        openPartyFrom(intent)?.let { pendingOpen = it }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val number = dialNumberFrom(intent) ?: return
-        pendingDial = number
-        channel?.invokeMethod("dialIntent", number)
+        dialNumberFrom(intent)?.let {
+            pendingDial = it
+            channel?.invokeMethod("dialIntent", it)
+        }
+        sharedTextFrom(intent)?.let {
+            pendingShare = it
+            channel?.invokeMethod("shareIntent", it)
+        }
+        openPartyFrom(intent)?.let {
+            pendingOpen = it
+            channel?.invokeMethod("openParty", it)
+        }
     }
+
+    private fun sharedTextFrom(i: Intent?): String? {
+        if (i?.action != Intent.ACTION_SEND) return null
+        val subject = i.getStringExtra(Intent.EXTRA_SUBJECT)
+        val text = i.getStringExtra(Intent.EXTRA_TEXT) ?: return subject
+        return if (subject != null && !text.contains(subject)) "$subject\n$text" else text
+    }
+
+    private fun openPartyFrom(i: Intent?): Map<String, String>? {
+        val doctype = i?.getStringExtra(CallerId.EXTRA_DOCTYPE) ?: return null
+        val id = i.getStringExtra(CallerId.EXTRA_ID) ?: return null
+        return mapOf("doctype" to doctype, "id" to id, "name" to (i.getStringExtra(CallerId.EXTRA_NAME) ?: id))
+    }
+
+    private fun callerIdStatus(): Map<String, Any> = mapOf(
+        "phone" to CallerId.phonePermissions.all { granted(it) },
+        "overlay" to Settings.canDrawOverlays(this),
+        "enabled" to CallerId.isEnabled(applicationContext),
+        "entries" to CallerId.directorySize(applicationContext),
+    )
 
     private fun dialNumberFrom(i: Intent?): String? {
         if (i == null) return null
@@ -511,6 +624,11 @@ class MainActivity : FlutterActivity() {
                     else -> result.success("blocked")
                 }
             }
+            CALLER_ID_REQUEST -> {
+                val result = pendingCallerIdResult ?: return
+                pendingCallerIdResult = null
+                result.success(callerIdStatus())
+            }
             AUDIO_REQUEST -> {
                 val result = pendingAudioResult ?: return
                 pendingAudioResult = null
@@ -526,6 +644,283 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val CALL_REQUEST = 4711
         private const val AUDIO_REQUEST = 4712
+        private const val CALLER_ID_REQUEST = 4713
+    }
+}
+''';
+
+const _callerId = r'''
+package __PACKAGE__
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.telephony.TelephonyManager
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.widget.LinearLayout
+import android.widget.TextView
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+
+/**
+ * Caller pop-up: when a call rings or is dialled (from any app), show the ERPNext
+ * customer / lead / deal name over the call screen. Names come from a directory the app
+ * syncs from ERPNext, so this works instantly and offline. The phone's own Phone app
+ * keeps handling (and recording) the call.
+ */
+@Suppress("DEPRECATION")
+object CallerId {
+    const val EXTRA_DOCTYPE = "hm_open_doctype"
+    const val EXTRA_ID = "hm_open_id"
+    const val EXTRA_NAME = "hm_open_name"
+    private const val PREFS = "hm_caller_id"
+    private const val FILE = "caller_directory.json"
+    private const val CHANNEL = "hipersign_caller_id"
+    private const val NOTIFICATION_ID = 7341
+
+    val phonePermissions: List<String>
+        get() = listOf(
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.PROCESS_OUTGOING_CALLS,
+        )
+
+    private var cache: JSONObject? = null
+    private var cacheStamp = 0L
+    private var view: View? = null
+    private val handler = Handler(Looper.getMainLooper())
+
+    fun isEnabled(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("enabled", true)
+
+    fun setEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("enabled", enabled).apply()
+        if (!enabled) hide(context)
+    }
+
+    fun saveDirectory(context: Context, json: String) {
+        val tmp = File(context.filesDir, "$FILE.tmp")
+        tmp.writeText(json)
+        tmp.renameTo(File(context.filesDir, FILE))
+        cache = null
+    }
+
+    fun directorySize(context: Context): Int = try {
+        load(context)?.length() ?: 0
+    } catch (e: Exception) {
+        0
+    }
+
+    private fun load(context: Context): JSONObject? {
+        val f = File(context.filesDir, FILE)
+        if (!f.exists()) return null
+        if (cache == null || cacheStamp != f.lastModified()) {
+            cache = JSONObject(f.readText())
+            cacheStamp = f.lastModified()
+        }
+        return cache
+    }
+
+    /** [name, kind, doctype, id, status] for a phone number, or null. */
+    fun lookup(context: Context, number: String?): JSONArray? {
+        val digits = (number ?: "").filter { it.isDigit() }
+        if (digits.length < 9) return null
+        return try {
+            load(context)?.optJSONArray(digits.takeLast(9))
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun show(context: Context, number: String?, outgoing: Boolean) {
+        if (!isEnabled(context)) return
+        val entry = lookup(context, number) ?: return
+        val name = entry.optString(0)
+        val kind = entry.optString(1)
+        val doctype = entry.optString(2)
+        val id = entry.optString(3)
+        val status = entry.optString(4).takeIf { it.isNotBlank() && it != "null" }
+        val subtitle = listOfNotNull(kind, status).joinToString(" · ")
+        if (Settings.canDrawOverlays(context)) {
+            showCard(context.applicationContext, name, subtitle, outgoing, doctype, id)
+        } else {
+            notify(context.applicationContext, name, subtitle, outgoing, doctype, id)
+        }
+    }
+
+    private fun openIntent(context: Context, doctype: String, id: String, name: String): PendingIntent {
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent()
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        launch.putExtra(EXTRA_DOCTYPE, doctype).putExtra(EXTRA_ID, id).putExtra(EXTRA_NAME, name)
+        return PendingIntent.getActivity(
+            context, id.hashCode(), launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun dp(context: Context, v: Float) =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, context.resources.displayMetrics).toInt()
+
+    private fun showCard(context: Context, name: String, subtitle: String, outgoing: Boolean, doctype: String, id: String) {
+        hide(context)
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val navy = Color.parseColor("#0A3C6E")
+        val blue = Color.parseColor("#1783C1")
+
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(context, 18f), dp(context, 14f), dp(context, 10f), dp(context, 14f))
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = dp(context, 20f).toFloat()
+                setStroke(dp(context, 2f), blue)
+            }
+            elevation = dp(context, 8f).toFloat()
+        }
+        val texts = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(TextView(context).apply {
+            text = if (outgoing) "Hipersign · Calling" else "Hipersign · Incoming call"
+            setTextColor(blue)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        texts.addView(TextView(context).apply {
+            text = name
+            setTextColor(navy)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 2
+        })
+        texts.addView(TextView(context).apply {
+            text = subtitle
+            setTextColor(Color.parseColor("#333333"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        })
+        card.addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        card.addView(TextView(context).apply {
+            text = "✕"
+            setTextColor(Color.parseColor("#6B7785"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            setPadding(dp(context, 12f), dp(context, 4f), dp(context, 8f), dp(context, 4f))
+            setOnClickListener { hide(context) }
+        })
+        card.setOnClickListener {
+            hide(context)
+            try {
+                openIntent(context, doctype, id, name).send()
+            } catch (e: Exception) {
+            }
+        }
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP
+            y = dp(context, 110f)
+            horizontalMargin = 0.04f
+        }
+        try {
+            wm.addView(card, params)
+            view = card
+        } catch (e: Exception) {
+            notify(context, name, subtitle, outgoing, doctype, id)
+        }
+    }
+
+    private fun notify(context: Context, name: String, subtitle: String, outgoing: Boolean, doctype: String, id: String) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Caller ID", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Shows the ERPNext customer, lead or deal during calls"
+                    setSound(null, null)
+                }
+            )
+            Notification.Builder(context, CHANNEL)
+        } else {
+            Notification.Builder(context).setPriority(Notification.PRIORITY_HIGH)
+        }
+        val n = builder
+            .setSmallIcon(context.applicationInfo.icon)
+            .setContentTitle(name)
+            .setContentText((if (outgoing) "Calling · " else "Incoming · ") + subtitle)
+            .setCategory(Notification.CATEGORY_CALL)
+            .setAutoCancel(true)
+            .setContentIntent(openIntent(context, doctype, id, name))
+            .build()
+        try {
+            nm.notify(NOTIFICATION_ID, n)
+        } catch (e: SecurityException) {
+        }
+    }
+
+    fun hide(context: Context) {
+        handler.removeCallbacksAndMessages(null)
+        val v = view ?: return
+        view = null
+        try {
+            (context.applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v)
+        } catch (e: Exception) {
+        }
+    }
+
+    /** Call connected: keep the card a little longer so it doesn't cover the call buttons. */
+    fun hideSoon(context: Context) {
+        handler.removeCallbacksAndMessages(null)
+        handler.postDelayed({ hide(context) }, 8000)
+    }
+
+    fun clearNotification(context: Context) {
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIFICATION_ID)
+    }
+}
+
+@Suppress("DEPRECATION")
+class CallerIdReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (!CallerId.isEnabled(context)) return
+        when (intent.action) {
+            Intent.ACTION_NEW_OUTGOING_CALL -> {
+                @Suppress("DEPRECATION") val number = intent.getStringExtra(Intent.EXTRA_PHONE_NUMBER)
+                CallerId.show(context, number, outgoing = true)
+            }
+            TelephonyManager.ACTION_PHONE_STATE_CHANGED -> {
+                when (intent.getStringExtra(TelephonyManager.EXTRA_STATE)) {
+                    TelephonyManager.EXTRA_STATE_RINGING -> {
+                        // Delivered twice on Android 9+; only the copy with READ_CALL_LOG carries the number.
+                        @Suppress("DEPRECATION") val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+                        if (number != null) CallerId.show(context, number, outgoing = false)
+                    }
+                    TelephonyManager.EXTRA_STATE_OFFHOOK -> CallerId.hideSoon(context)
+                    TelephonyManager.EXTRA_STATE_IDLE -> {
+                        CallerId.hide(context)
+                        CallerId.clearNotification(context)
+                    }
+                }
+            }
+        }
     }
 }
 ''';

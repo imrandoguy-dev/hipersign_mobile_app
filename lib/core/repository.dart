@@ -249,6 +249,16 @@ class Repository {
     return Party.fromJson(Map<String, dynamic>.from(data['party'] as Map));
   }
 
+  /// A business shared from Google Search / Maps -> phone number, name, ERP party.
+  Future<SharedPlace> resolveShared(String text) async =>
+      SharedPlace.fromJson(Map<String, dynamic>.from(await api.post('customers.resolve_shared', {'text': text}) as Map));
+
+  /// Phone numbers of visible customers / leads / deals, for the caller pop-up.
+  Future<List<Map<String, dynamic>>> phoneDirectory() async {
+    final data = Map<String, dynamic>.from(await api.get('customers.phone_directory') as Map);
+    return ((data['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   // ------------------------------------------------------------ call recordings
 
   Future<PageResult<CallRecording>> recordings({String? partyDoctype, String? party, String? cursor}) async {
