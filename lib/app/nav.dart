@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'theme.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<ScaffoldMessengerState> messengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -12,6 +13,6 @@ void showSnack(String message, {bool error = false}) {
     ?..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(
       content: Text(message),
-      backgroundColor: error ? const Color(0xFF5C2B2B) : null,
+      backgroundColor: error ? HsColors.danger : null,
     ));
 }

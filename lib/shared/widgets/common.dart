@@ -60,9 +60,9 @@ class SyncBanner extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: const Color(0xFF3A2E1B), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: HsColors.warningBg, borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
-        Icon(offline ? Icons.cloud_off : Icons.error_outline, size: 18, color: HsColors.pending),
+        Icon(offline ? Icons.cloud_off : Icons.error_outline, size: 18, color: HsColors.warning),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -147,7 +147,7 @@ Future<T?> runWrite<T>(BuildContext context, Future<T> Function() action, {Strin
     if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
     messenger?.showSnackBar(SnackBar(
       content: Text(e.message),
-      backgroundColor: const Color(0xFF5C2B2B),
+      backgroundColor: HsColors.danger,
       duration: const Duration(seconds: 5),
     ));
     return null;

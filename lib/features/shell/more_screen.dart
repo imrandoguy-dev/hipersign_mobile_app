@@ -26,7 +26,7 @@ class MoreScreen extends StatelessWidget {
             CircleAvatar(
               radius: 26,
               backgroundColor: HsColors.accent,
-              foregroundColor: HsColors.onPastel,
+              foregroundColor: HsColors.onAccent,
               child: Text(p.fullName.isEmpty ? '?' : p.fullName[0].toUpperCase(), style: const TextStyle(fontSize: 20)),
             ),
             const SizedBox(width: 14),

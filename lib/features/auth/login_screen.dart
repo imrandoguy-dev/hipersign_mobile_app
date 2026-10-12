@@ -188,10 +188,10 @@ class _Banner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: error ? const Color(0xFF4A2424) : const Color(0xFF3A2E1B),
+        color: error ? HsColors.dangerBg : HsColors.warningBg,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(text),
+      child: Text(text, style: TextStyle(color: error ? HsColors.danger : HsColors.textPrimary)),
     );
   }
 }

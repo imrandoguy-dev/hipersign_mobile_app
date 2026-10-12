@@ -239,11 +239,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Text(DateFormat('EEE').format(d),
-                        style: TextStyle(fontSize: 12, color: selected ? HsColors.onPastel : HsColors.textSecondary)),
+                        style: TextStyle(fontSize: 12, color: selected ? HsColors.onAccent : HsColors.textSecondary)),
                     const SizedBox(height: 4),
                     Text('${d.day}',
                         style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w700, color: selected ? HsColors.onPastel : HsColors.textPrimary)),
+                            fontSize: 18, fontWeight: FontWeight.w700, color: selected ? HsColors.onAccent : HsColors.textPrimary)),
                   ]),
                 ),
               ),

@@ -119,13 +119,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       floatingActionButton: FloatingActionButton(
         tooltip: 'Quick actions',
         backgroundColor: HsColors.accent,
-        foregroundColor: HsColors.onPastel,
+        foregroundColor: HsColors.onAccent,
         shape: const CircleBorder(),
         onPressed: _openQuickActions,
         child: const Icon(Icons.add, size: 30),
       ),
       bottomNavigationBar: BottomAppBar(
-        color: HsColors.card,
+        color: HsColors.background,
         shape: const CircularNotchedRectangle(),
         notchMargin: 8,
         padding: EdgeInsets.zero,
