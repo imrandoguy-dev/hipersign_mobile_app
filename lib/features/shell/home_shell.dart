@@ -64,12 +64,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      context.read<SessionController>().refreshProfile(); // picks up role changes (FR-005)
-      bumpRefresh();
-      _checkForUpdate();
-      _syncRecordings(ask: true);
-    }
+    if (state == AppLifecycleState.resumed) _onResume();
+  }
+
+  Future<void> _onResume() async {
+    final session = context.read<SessionController>();
+    bumpRefresh();
+    _checkForUpdate();
+    // Refresh roles/features first (FR-005), so call recording sees the server's latest settings.
+    try {
+      await session.refreshProfile();
+    } catch (_) {}
+    if (mounted) await _syncRecordings(ask: true);
   }
 
   void _checkForUpdate() {
@@ -121,6 +127,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final session = context.watch<SessionController>();
     final profile = session.profile!;
+    // Keep call recording in step with the user's features whenever the profile changes.
+    RecordingService.instance.bind(profile.user, enabled: profile.can('call_recordings'));
     if (!profile.workspaces.contains('sales')) {
       return _NoWorkspace(name: profile.fullName);
     }

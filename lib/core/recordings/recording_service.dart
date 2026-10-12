@@ -159,6 +159,11 @@ class RecordingService extends ChangeNotifier {
   /// "granted" | "denied" | "blocked" | "unsupported" | null (not checked yet).
   String? permission;
 
+  /// What the last check saw - shown on the Recordings screen to help with setup problems.
+  DateTime? lastCheck;
+  String? lastProblem;
+  List<String> lastFiles = const [];
+
   List<CallEntry> get entries => List.unmodifiable(_entries);
 
   /// Calls whose recording is not in ERP yet (newest first).
@@ -218,7 +223,9 @@ class RecordingService extends ChangeNotifier {
     String? partyName,
     String? activity,
   }) async {
-    if (!enabled || _user == null) return;
+    // Always note the call (even before the server has switched recordings on), so a
+    // recording is never lost because the app's settings were still loading.
+    if (!supported || _user == null) return;
     await _load();
     _entries.add(CallEntry(
       id: '${_user!.hashCode.toRadixString(16)}-${DateTime.now().millisecondsSinceEpoch}-${randomKey(4)}',
@@ -252,7 +259,12 @@ class RecordingService extends ChangeNotifier {
         _askedThisSession = true;
         permission = await audioPermission(request: true);
       }
-      if (waiting.isNotEmpty && permission == 'granted') await _match(waiting);
+      if (waiting.isNotEmpty && permission == 'granted') {
+        await _match(waiting);
+      } else if (waiting.isNotEmpty) {
+        lastCheck = DateTime.now();
+        lastProblem = 'Hipersign is not allowed to read audio files yet.';
+      }
       await _uploadReady(repo);
     } finally {
       _syncing = false;
@@ -268,9 +280,14 @@ class RecordingService extends ChangeNotifier {
     List<PhoneAudioFile> files;
     try {
       files = await findPhoneRecordings(waiting.first.startedAt.subtract(const Duration(seconds: 30)), now);
-    } catch (_) {
+      lastProblem = null;
+    } catch (e) {
+      lastProblem = 'Could not read audio files: $e';
       return;
+    } finally {
+      lastCheck = now;
     }
+    lastFiles = files.map((f) => '${f.path}${f.name}'.trim()).take(8).toList();
     for (final e in waiting) {
       final next = all.where((o) => o.startedAt.isAfter(e.startedAt)).map((o) => o.startedAt).firstOrNull;
       final pick = pickRecording(number: e.number, startedAt: e.startedAt, nextCallAt: next, files: files, used: _used);
@@ -370,6 +387,49 @@ class RecordingService extends ChangeNotifier {
       e.status = CallEntry.waiting;
       await sync(repo);
     }
+    await _save();
+    notifyListeners();
+  }
+
+  /// Call recordings saved on the phone in the last [days] days that are not in ERP yet
+  /// (for calls made outside Hipersign, or ones the app missed).
+  Future<List<PhoneAudioFile>> recentPhoneRecordings({int days = 3}) async {
+    await _load();
+    final now = DateTime.now();
+    final files = await findPhoneRecordings(now.subtract(Duration(days: days)), now);
+    lastCheck = now;
+    lastFiles = files.map((f) => '${f.path}${f.name}'.trim()).take(8).toList();
+    final callish = files
+        .where((f) => f.size > 0 && !_used.contains(f.uri) && '${f.path}/${f.name}'.toLowerCase().contains('call'))
+        .toList()
+      ..sort((a, b) => b.added.compareTo(a.added));
+    notifyListeners();
+    return callish;
+  }
+
+  /// Save a recording picked by hand from the phone, linked to [p].
+  Future<void> addFromPhone(Repository repo, PhoneAudioFile f, Party p) async {
+    await _load();
+    final digits = _digits(f.name);
+    final started = f.added.subtract(Duration(milliseconds: f.durationMs));
+    final e = CallEntry(
+      id: '${_user.hashCode.toRadixString(16)}-${f.added.millisecondsSinceEpoch}-${randomKey(4)}',
+      number: digits.length >= 7 ? digits : (p.primaryPhone?.e164 ?? ''),
+      startedAt: started,
+      partyDoctype: p.doctype,
+      party: p.id,
+      partyName: p.name,
+      status: CallEntry.found,
+      uri: f.uri,
+      fileName: f.name,
+      durationMs: f.durationMs,
+      size: f.size,
+    );
+    _used.add(f.uri);
+    _entries.add(e);
+    await _save();
+    notifyListeners();
+    await _upload(repo, e);
     await _save();
     notifyListeners();
   }

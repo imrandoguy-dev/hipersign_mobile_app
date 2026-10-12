@@ -127,6 +127,64 @@ class _RecordingsScreenState extends State<RecordingsScreen> with WidgetsBinding
     await _service.link(context.read<SessionController>().repo, e, p);
   }
 
+  /// Pick one of the phone's recent call recordings and save it to a customer.
+  Future<void> _addFromPhone() async {
+    var perm = await audioPermission();
+    if (perm == 'denied') perm = await _service.requestPermission();
+    if (perm == 'blocked') {
+      showSnack('Allow "Music and audio" for Hipersign in phone settings first.', error: true);
+      await openAppSettings();
+      return;
+    }
+    if (perm != 'granted') return;
+    List<PhoneAudioFile> files;
+    try {
+      files = await _service.recentPhoneRecordings();
+    } catch (_) {
+      showSnack('Could not read the phone\'s recordings.', error: true);
+      return;
+    }
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<PhoneAudioFile>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+          child: files.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.fromLTRB(24, 0, 24, 32),
+                  child: Text(
+                    'No call recordings from the last 3 days were found on this phone.\n\n'
+                    'Check that call recording is switched on in your phone\'s Phone app settings.',
+                  ),
+                )
+              : ListView(shrinkWrap: true, children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: Text('Call recordings on this phone',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: HsColors.navy)),
+                  ),
+                  for (final f in files)
+                    ListTile(
+                      leading: const Icon(Icons.graphic_eq, color: HsColors.blue),
+                      title: Text(f.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${_when(f.added)}  ·  ${fmtDuration((f.durationMs / 1000).round())}'),
+                      onTap: () => Navigator.pop(ctx, f),
+                    ),
+                ]),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final p = await pickParty(context);
+    if (p == null || !mounted) return;
+    await _service.addFromPhone(context.read<SessionController>().repo, picked, p);
+    final saved = _service.entries.where((e) => e.uri == picked.uri).firstOrNull;
+    if (saved?.status == CallEntry.uploaded) showSnack('Saved to ${p.name}');
+  }
+
   Future<void> _delete(CallRecording r) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -160,6 +218,12 @@ class _RecordingsScreenState extends State<RecordingsScreen> with WidgetsBinding
       appBar: AppBar(
         title: const Text('Call recordings', style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
+          if (_service.supported)
+            IconButton(
+              tooltip: 'Add a recording from this phone',
+              icon: const Icon(Icons.library_add_outlined),
+              onPressed: _addFromPhone,
+            ),
           IconButton(
             tooltip: 'How it works',
             icon: const Icon(Icons.help_outline),
@@ -244,6 +308,7 @@ class _RecordingsScreenState extends State<RecordingsScreen> with WidgetsBinding
                 ),
               ),
             if (_loadingMore) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
+            if (_service.supported) _Diagnostics(service: _service),
           ]),
         ),
       ),
@@ -339,3 +404,29 @@ Future<void> showRecordingHelp(BuildContext context) => showModalBottomSheet<voi
         ),
       ),
     );
+
+/// Small grey status block - lets support see what the phone found without access to it.
+class _Diagnostics extends StatelessWidget {
+  const _Diagnostics({required this.service});
+  final RecordingService service;
+
+  @override
+  Widget build(BuildContext context) {
+    final check = service.lastCheck;
+    final lines = <String>[
+      'Recording: ${service.enabled ? 'on' : 'off (not enabled for this user on the server)'}'
+          '  ·  Audio access: ${service.permission ?? 'not checked'}'
+          '  ·  Calls tracked: ${service.entries.length}',
+      if (check != null) 'Last check: ${DateFormat.jms().format(check)} - ${service.lastFiles.length} audio file(s) found',
+      if (service.lastProblem != null) service.lastProblem!,
+      for (final f in service.lastFiles) '   $f',
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: SelectableText(
+        lines.join('\n'),
+        style: const TextStyle(fontSize: 11, color: HsColors.textSecondary, height: 1.4),
+      ),
+    );
+  }
+}
