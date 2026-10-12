@@ -110,13 +110,27 @@ Future<Map<String, String>?> takeOpenIntent() async {
   return m?.map((k, v) => MapEntry(k.toString(), v.toString()));
 }
 
+/// A work call that just ended (opened by the phone when the call finished), once.
+Future<Map<String, dynamic>?> takeAfterCallIntent() async {
+  final m = await _take<Map<dynamic, dynamic>>('takeAfterCallIntent');
+  return m?.map((k, v) => MapEntry(k.toString(), v));
+}
+
+Future<void> clearAfterCallNotification() => _take<bool>('clearAfterCallNotification');
+
+Future<void> setAfterCallEnabled(bool enabled) async {
+  if (!Platform.isAndroid) return;
+  await _channel.invokeMethod<bool>('setAfterCallEnabled', {'enabled': enabled});
+}
+
 /// Handlers for links / shares / pop-up taps that arrive while Hipersign is open.
 void setNativeHandlers({
   void Function(String number)? onDial,
   void Function(String text)? onShare,
   void Function(Map<String, String> party)? onOpen,
+  void Function(Map<String, dynamic> call)? onAfterCall,
 }) {
-  if (onDial == null && onShare == null && onOpen == null) {
+  if (onDial == null && onShare == null && onOpen == null && onAfterCall == null) {
     _channel.setMethodCallHandler(null);
     return;
   }
@@ -128,6 +142,11 @@ void setNativeHandlers({
       case 'shareIntent':
         await takeShareIntent();
         if (call.arguments is String) onShare?.call(call.arguments as String);
+      case 'afterCall':
+        await takeAfterCallIntent();
+        if (call.arguments is Map) {
+          onAfterCall?.call((call.arguments as Map).map((k, v) => MapEntry(k.toString(), v)));
+        }
       case 'openParty':
         await takeOpenIntent();
         if (call.arguments is Map) {
@@ -144,11 +163,13 @@ class CallerIdStatus {
       : phone = m['phone'] == true,
         overlay = m['overlay'] == true,
         enabled = m['enabled'] != false,
+        afterCall = m['afterCall'] != false,
         entries = (m['entries'] as num?)?.toInt() ?? 0;
 
   final bool phone; // can see who is calling / being called
   final bool overlay; // can draw the card over the call screen (else a notification is used)
   final bool enabled;
+  final bool afterCall; // open the after-call screen when a work call ends
   final int entries; // numbers known from ERPNext
 }
 

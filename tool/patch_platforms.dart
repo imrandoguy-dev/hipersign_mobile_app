@@ -315,7 +315,7 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('readCallLog')) return;
+  if (current.contains('takeAfterCallIntent')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
@@ -355,6 +355,7 @@ class MainActivity : FlutterActivity() {
     private var pendingDial: String? = null // number from a tel: link (e.g. Google's Call button)
     private var pendingShare: String? = null // text shared to Hipersign
     private var pendingOpen: Map<String, String>? = null // party to open (from the caller pop-up)
+    private var pendingAfterCall: Map<String, Any?>? = null // a work call just ended
     private var pendingCallerIdResult: MethodChannel.Result? = null
     private var pendingNumber: String? = null
     private var pendingCallResult: MethodChannel.Result? = null
@@ -384,6 +385,18 @@ class MainActivity : FlutterActivity() {
                 "takeOpenIntent" -> {
                     result.success(pendingOpen)
                     pendingOpen = null
+                }
+                "takeAfterCallIntent" -> {
+                    result.success(pendingAfterCall)
+                    pendingAfterCall = null
+                }
+                "setAfterCallEnabled" -> {
+                    CallerId.setAfterCallEnabled(applicationContext, call.argument<Boolean>("enabled") ?: true)
+                    result.success(true)
+                }
+                "clearAfterCallNotification" -> {
+                    CallerId.clearAfterCallNotification(applicationContext)
+                    result.success(true)
                 }
                 "callerIdStatus" -> result.success(callerIdStatus())
                 "readCallLog" -> {
@@ -515,6 +528,7 @@ class MainActivity : FlutterActivity() {
         dialNumberFrom(intent)?.let { pendingDial = it }
         sharedTextFrom(intent)?.let { pendingShare = it }
         openPartyFrom(intent)?.let { pendingOpen = it }
+        afterCallFrom(intent)?.let { pendingAfterCall = it }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -527,10 +541,27 @@ class MainActivity : FlutterActivity() {
             pendingShare = it
             channel?.invokeMethod("shareIntent", it)
         }
+        afterCallFrom(intent)?.let {
+            pendingAfterCall = it
+            channel?.invokeMethod("afterCall", it)
+            return
+        }
         openPartyFrom(intent)?.let {
             pendingOpen = it
             channel?.invokeMethod("openParty", it)
         }
+    }
+
+    private fun afterCallFrom(i: Intent?): Map<String, Any?>? {
+        val number = i?.getStringExtra(CallerId.EXTRA_AFTER_CALL) ?: return null
+        return mapOf(
+            "number" to number,
+            "direction" to (i.getStringExtra(CallerId.EXTRA_DIRECTION) ?: "outgoing"),
+            "duration" to i.getLongExtra(CallerId.EXTRA_DURATION, 0L),
+            "name" to i.getStringExtra(CallerId.EXTRA_NAME),
+            "doctype" to i.getStringExtra(CallerId.EXTRA_DOCTYPE),
+            "id" to i.getStringExtra(CallerId.EXTRA_ID),
+        )
     }
 
     private fun sharedTextFrom(i: Intent?): String? {
@@ -541,6 +572,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun openPartyFrom(i: Intent?): Map<String, String>? {
+        if (i?.hasExtra(CallerId.EXTRA_AFTER_CALL) == true) return null
         val doctype = i?.getStringExtra(CallerId.EXTRA_DOCTYPE) ?: return null
         val id = i.getStringExtra(CallerId.EXTRA_ID) ?: return null
         return mapOf("doctype" to doctype, "id" to id, "name" to (i.getStringExtra(CallerId.EXTRA_NAME) ?: id))
@@ -550,6 +582,7 @@ class MainActivity : FlutterActivity() {
         "phone" to CallerId.phonePermissions.all { granted(it) },
         "overlay" to Settings.canDrawOverlays(this),
         "enabled" to CallerId.isEnabled(applicationContext),
+        "afterCall" to CallerId.afterCallEnabled(applicationContext),
         "entries" to CallerId.directorySize(applicationContext),
     )
 
@@ -590,6 +623,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun placeCall(number: String): String = try {
+        CallerId.noteAppCall(applicationContext, number)
         startActivity(Intent(Intent.ACTION_CALL, Uri.fromParts("tel", number, null)))
         "called"
     } catch (e: Exception) {
@@ -711,6 +745,8 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.content.pm.PackageManager
+import android.provider.CallLog
 import android.provider.Settings
 import android.telephony.TelephonyManager
 import android.util.TypedValue
@@ -734,6 +770,10 @@ object CallerId {
     const val EXTRA_DOCTYPE = "hm_open_doctype"
     const val EXTRA_ID = "hm_open_id"
     const val EXTRA_NAME = "hm_open_name"
+    const val EXTRA_AFTER_CALL = "hm_after_call" // number of the call that just ended
+    const val EXTRA_DIRECTION = "hm_after_direction" // incoming | outgoing | missed
+    const val EXTRA_DURATION = "hm_after_duration" // seconds
+    private const val AFTER_NOTIFICATION_ID = 7342
     private const val PREFS = "hm_caller_id"
     private const val FILE = "caller_directory.json"
     private const val CHANNEL = "hipersign_caller_id"
@@ -757,6 +797,115 @@ object CallerId {
     fun setEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("enabled", enabled).apply()
         if (!enabled) hide(context)
+    }
+
+    fun afterCallEnabled(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("after_call", true)
+
+    fun setAfterCallEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("after_call", enabled).apply()
+    }
+
+    /** Hipersign placed a call: remember it so its end opens the after-call screen. */
+    fun noteAppCall(context: Context, number: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString("last_app_call", number.filter { it.isDigit() }.takeLast(9))
+            .putLong("last_app_call_at", System.currentTimeMillis())
+            .apply()
+    }
+
+    /**
+     * A call just ended (phone back to idle). If it was a work call - an ERPNext customer /
+     * lead / deal, or a call placed from Hipersign - open Hipersign's after-call screen, which
+     * saves the recording and logs the call even when the app was closed.
+     */
+    fun onCallEnded(context: Context) {
+        if (!isEnabled(context) || !afterCallEnabled(context)) return
+        if (context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) return
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val cursor = context.contentResolver.query(
+            CallLog.Calls.CONTENT_URI,
+            arrayOf(CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.TYPE),
+            null, null, "${CallLog.Calls.DATE} DESC",
+        ) ?: return
+        cursor.use { c ->
+            if (!c.moveToFirst()) return
+            val id = c.getLong(0)
+            val number = c.getString(1) ?: return
+            val date = c.getLong(2)
+            val duration = c.getLong(3)
+            val type = c.getInt(4)
+            // Only the call that just ended (started recently, or long call that just finished).
+            if (System.currentTimeMillis() - (date + duration * 1000L) > 3 * 60 * 1000L) return
+            if (prefs.getLong("last_after_call_id", -1L) == id) return
+            prefs.edit().putLong("last_after_call_id", id).apply()
+            val direction = when (type) {
+                CallLog.Calls.INCOMING_TYPE -> "incoming"
+                CallLog.Calls.OUTGOING_TYPE -> "outgoing"
+                CallLog.Calls.MISSED_TYPE, CallLog.Calls.REJECTED_TYPE -> "missed"
+                else -> return
+            }
+            val key = number.filter { it.isDigit() }.takeLast(9)
+            val fromApp = prefs.getString("last_app_call", null) == key &&
+                Math.abs(date - prefs.getLong("last_app_call_at", 0L)) < 5 * 60 * 1000L
+            val entry = lookup(context, number)
+            if (entry == null && !fromApp) return // personal call
+            launchAfterCall(context.applicationContext, number, direction, duration, entry)
+        }
+    }
+
+    private fun launchAfterCall(context: Context, number: String, direction: String, duration: Long, entry: JSONArray?) {
+        val name = entry?.optString(0)?.takeIf { it.isNotBlank() } ?: number
+        val intent = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(EXTRA_AFTER_CALL, number)
+            .putExtra(EXTRA_DIRECTION, direction)
+            .putExtra(EXTRA_DURATION, duration)
+            .putExtra(EXTRA_NAME, name)
+        if (entry != null) {
+            intent.putExtra(EXTRA_DOCTYPE, entry.optString(2)).putExtra(EXTRA_ID, entry.optString(3))
+        }
+        // Notification first (always works); the screen itself opens when Android allows it
+        // ("Display over other apps" / Xiaomi "pop-up windows while running in background").
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Caller ID", NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null) }
+            )
+            Notification.Builder(context, CHANNEL)
+        } else {
+            Notification.Builder(context)
+        }
+        val title = when (direction) {
+            "missed" -> "Missed call: $name"
+            else -> "Call with $name ended"
+        }
+        val pi = PendingIntent.getActivity(
+            context, 9000 + (number.hashCode() and 0xfff), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        try {
+            nm.notify(
+                AFTER_NOTIFICATION_ID,
+                builder.setSmallIcon(context.applicationInfo.icon)
+                    .setContentTitle(title)
+                    .setContentText(if (direction == "missed") "Tap to call back" else "Tap to save the recording and add a follow-up")
+                    .setAutoCancel(true)
+                    .setContentIntent(pi)
+                    .build()
+            )
+        } catch (e: SecurityException) {
+        }
+        if (Settings.canDrawOverlays(context)) {
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+    fun clearAfterCallNotification(context: Context) {
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(AFTER_NOTIFICATION_ID)
     }
 
     fun saveDirectory(context: Context, json: String) {
@@ -961,6 +1110,18 @@ class CallerIdReceiver : BroadcastReceiver() {
                     TelephonyManager.EXTRA_STATE_IDLE -> {
                         CallerId.hide(context)
                         CallerId.clearNotification(context)
+                        // Give the phone a moment to write the call to its history, then open the
+                        // after-call screen for work calls.
+                        val pending = goAsync()
+                        val app = context.applicationContext
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            try {
+                                CallerId.onCallEnded(app)
+                            } catch (e: Exception) {
+                            } finally {
+                                pending.finish()
+                            }
+                        }, 1500)
                     }
                 }
             }

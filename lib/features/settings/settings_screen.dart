@@ -362,6 +362,17 @@ class _CallerIdCardState extends State<_CallerIdCard> with WidgetsBindingObserve
           _refresh();
         },
       ),
+      SwitchListTile(
+        title: const Text('After-call screen'),
+        subtitle: const Text('When a work call ends, open Hipersign to save the recording and add a follow-up - even if the app is closed'),
+        value: s.afterCall,
+        onChanged: s.enabled
+            ? (v) async {
+                await setAfterCallEnabled(v);
+                _refresh();
+              }
+            : null,
+      ),
       ListTile(
         leading: Icon(s.phone ? Icons.check_circle : Icons.phone_locked_outlined,
             color: s.phone ? HsColors.completed : HsColors.warning),

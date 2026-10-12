@@ -14,6 +14,7 @@ import '../../core/updates/update_service.dart';
 import '../activities/activity_form.dart';
 import '../activities/activity_list_screen.dart';
 import '../calendar/calendar_screen.dart';
+import '../calls/after_call_screen.dart';
 import '../customers/customer_detail_screen.dart';
 import '../customers/customers_screen.dart';
 import '../customers/dialer_sheet.dart';
@@ -53,6 +54,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       onDial: (number) => _showDialer(number: number),
       onShare: (text) => _showDialer(shared: text),
       onOpen: _openParty,
+      onAfterCall: _showAfterCall,
     );
   }
 
@@ -64,6 +66,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (shared != null && mounted) _showDialer(shared: shared);
     final party = await takeOpenIntent();
     if (party != null && mounted) _openParty(party);
+    final ended = await takeAfterCallIntent();
+    if (ended != null && mounted) _showAfterCall(ended);
+  }
+
+  /// A work call just ended (phone opened Hipersign): save it and offer quick actions.
+  void _showAfterCall(Map<String, dynamic> call) {
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    nav.popUntil((route) => route.isFirst);
+    nav.push(MaterialPageRoute(builder: (_) => AfterCallScreen(call: call), fullscreenDialog: true));
   }
 
   void _showDialer({String? number, String? shared}) {
