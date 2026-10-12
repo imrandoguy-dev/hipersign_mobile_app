@@ -6,6 +6,7 @@ import '../../app/refresh.dart';
 import '../../app/theme.dart';
 import '../../core/auth/session.dart';
 import '../../core/notifications/notification_service.dart';
+import '../../core/updates/update_service.dart';
 import '../activities/activity_form.dart';
 import '../activities/activity_list_screen.dart';
 import '../calendar/calendar_screen.dart';
@@ -32,6 +33,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final pending = notifications.takePendingRoute();
       if (pending != null) navigatorKey.currentState?.pushNamed(pending);
+      _checkForUpdate();
     });
   }
 
@@ -47,7 +49,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       context.read<SessionController>().refreshProfile(); // picks up role changes (FR-005)
       bumpRefresh();
+      _checkForUpdate();
     }
+  }
+
+  void _checkForUpdate() {
+    final api = context.read<SessionController>().api;
+    if (api != null) UpdateService.instance.autoCheck(context, api);
   }
 
   void _openQuickActions() {

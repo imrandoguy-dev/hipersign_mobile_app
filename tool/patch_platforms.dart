@@ -51,6 +51,7 @@ void _androidManifest() {
     'android.permission.RECEIVE_BOOT_COMPLETED',
     'android.permission.SCHEDULE_EXACT_ALARM',
     'android.permission.VIBRATE',
+    'android.permission.REQUEST_INSTALL_PACKAGES', // in-app updates (sideloaded builds)
   ];
   final current = s;
   final missing = perms.where((p) => !current.contains('"$p"')).map((p) => '    <uses-permission android:name="$p"/>').join('\n');
@@ -125,7 +126,32 @@ void _androidGradle() {
       s = '$s\ndependencies {\n    $dep\n}\n';
     }
   }
-  if (s != before) _write(file.path, s, '${file.path} (core library desugaring)');
+  if (isKts && !s.contains('HM_KEYSTORE_PATH')) {
+    const signing = '''
+    signingConfigs {
+        create("hipersign") {
+            val ks = System.getenv("HM_KEYSTORE_PATH")
+            if (ks != null) {
+                storeFile = file(ks)
+                storePassword = System.getenv("HM_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("HM_KEY_ALIAS") ?: "hipersign"
+                keyPassword = System.getenv("HM_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {''';
+    if (s.contains('    buildTypes {')) {
+      s = s.replaceFirst('    buildTypes {', signing.substring(1));
+      s = s.replaceFirst(
+        'signingConfig = signingConfigs.getByName("debug")',
+        'signingConfig = if (System.getenv("HM_KEYSTORE_PATH") != null) signingConfigs.getByName("hipersign") else signingConfigs.getByName("debug")',
+      );
+    } else {
+      warnings.add('Could not add the Hipersign release signing config to ${file.path}.');
+    }
+  }
+  if (s != before) _write(file.path, s, '${file.path} (desugaring, release signing)');
 }
 
 void _iosInfoPlist() {

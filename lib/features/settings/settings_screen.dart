@@ -9,6 +9,7 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/notifications/reminder_planner.dart';
+import '../../core/updates/update_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -193,7 +194,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _Card(children: [
           ListTile(title: const Text('Signed in as'), subtitle: Text(session.profile?.user ?? '-')),
           ListTile(title: const Text('Server'), subtitle: Text(session.server ?? '-')),
-          const ListTile(title: Text('App version'), subtitle: Text(appVersion)),
+          const _VersionTile(),
         ]),
         const SizedBox(height: 40),
       ]),
@@ -221,4 +222,56 @@ class _Card extends StatelessWidget {
         decoration: BoxDecoration(color: HsColors.card, borderRadius: BorderRadius.circular(18)),
         child: Column(children: children),
       );
+}
+
+class _VersionTile extends StatefulWidget {
+  const _VersionTile();
+
+  @override
+  State<_VersionTile> createState() => _VersionTileState();
+}
+
+class _VersionTileState extends State<_VersionTile> {
+  String _version = appVersion;
+  bool _checking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    UpdateService.instance.packageInfo().then((p) {
+      if (mounted) setState(() => _version = '${p.version} (build ${p.buildNumber})');
+    }).catchError((_) {});
+  }
+
+  Future<void> _check() async {
+    final api = context.read<SessionController>().api;
+    if (api == null) return;
+    setState(() => _checking = true);
+    try {
+      final info = await UpdateService.instance.check(api);
+      if (!mounted) return;
+      if (info.available) {
+        await UpdateService.instance.showUpdatePrompt(context, api, info);
+      } else {
+        showSnack(info.reason ?? 'You have the latest version.');
+      }
+    } on ApiException catch (e) {
+      showSnack(e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: const Text('App version'),
+      subtitle: Text(_version),
+      trailing: Platform.isAndroid
+          ? (_checking
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : TextButton(onPressed: _check, child: const Text('Check for updates')))
+          : null,
+    );
+  }
 }

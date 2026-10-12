@@ -27,8 +27,26 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: Unit and widget tests
         run: flutter test
-      - name: Build APK (pilot build, debug-signed)
-        run: flutter build apk --release
+      - name: Unlock release signing key
+        env:
+          HM_SIGNING_PASSWORD: ${{ secrets.HM_SIGNING_PASSWORD }}
+        run: |
+          if [ -z "$HM_SIGNING_PASSWORD" ]; then
+            echo "::warning::HM_SIGNING_PASSWORD secret is not set - building with a temporary debug key (in-app updates will not install over older builds)."
+            exit 0
+          fi
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in android-signing/hipersign-release.jks.enc -out "$RUNNER_TEMP/hipersign-release.jks" \
+            -pass env:HM_SIGNING_PASSWORD
+          echo "HM_KEYSTORE_PATH=$RUNNER_TEMP/hipersign-release.jks" >> "$GITHUB_ENV"
+      - name: Build APK
+        env:
+          HM_KEYSTORE_PASSWORD: ${{ secrets.HM_SIGNING_PASSWORD }}
+        run: |
+          # Every build gets a higher number, so phones know an update is newer.
+          BUILD=$((GITHUB_RUN_NUMBER + 100))
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          flutter build apk --release --build-number "$BUILD" --build-name "0.1.$BUILD"
       - uses: actions/upload-artifact@v4
         with:
           name: hipersign-android-apk
@@ -40,9 +58,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk Hipersign.apk
+          MSG=$(git log -1 --pretty=%s | head -c 300 | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().strip()))')
+          printf '{"version_code": %s, "version_name": "0.1.%s", "commit": "%s", "notes": %s, "mandatory": false}\n' \
+            "$BUILD" "$BUILD" "${GITHUB_SHA::7}" "$MSG" > version.json
+          cat version.json
           gh release delete pilot --yes --cleanup-tag || true
-          gh release create pilot Hipersign.apk --prerelease \
-            --title "Latest pilot build" \
+          gh release create pilot Hipersign.apk version.json --prerelease \
+            --title "Latest pilot build (0.1.$BUILD)" \
             --notes "Built from ${GITHUB_SHA::7}. On an Android phone, tap Hipersign.apk to download and install."
 
   ios:
