@@ -315,7 +315,7 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('takeShareIntent')) return;
+  if (current.contains('readCallLog')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
@@ -332,6 +332,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.CallLog
 import android.provider.MediaStore
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -385,6 +386,21 @@ class MainActivity : FlutterActivity() {
                     pendingOpen = null
                 }
                 "callerIdStatus" -> result.success(callerIdStatus())
+                "readCallLog" -> {
+                    val since = call.argument<Number>("since")?.toLong() ?: 0L
+                    if (!granted(Manifest.permission.READ_CALL_LOG)) {
+                        result.success(null)
+                    } else {
+                        Thread {
+                            try {
+                                val rows = readCallLog(since)
+                                runOnUiThread { result.success(rows) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("CALL_LOG_FAILED", e.message, null) }
+                            }
+                        }.start()
+                    }
+                }
                 "requestCallerIdPermissions" -> {
                     val missing = CallerId.phonePermissions.filter { !granted(it) }
                     if (missing.isEmpty()) {
@@ -543,6 +559,34 @@ class MainActivity : FlutterActivity() {
         val data = i.data ?: return null
         if (data.scheme != "tel") return null
         return Uri.decode(data.schemeSpecificPart ?: "").trim().ifEmpty { null }
+    }
+
+    /** Phone call history since [since] (ms), with the ERPNext party when the number is known. */
+    private fun readCallLog(since: Long): ArrayList<Map<String, Any?>> {
+        val out = ArrayList<Map<String, Any?>>()
+        val columns = arrayOf(
+            CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.TYPE,
+        )
+        contentResolver.query(
+            CallLog.Calls.CONTENT_URI, columns, "${CallLog.Calls.DATE} > ?", arrayOf(since.toString()),
+            "${CallLog.Calls.DATE} ASC",
+        )?.use { c ->
+            while (c.moveToNext() && out.size < 2000) {
+                val number = c.getString(1) ?: ""
+                val known = CallerId.lookup(applicationContext, number)
+                out.add(
+                    mapOf(
+                        "id" to c.getLong(0),
+                        "number" to number,
+                        "date" to c.getLong(2),
+                        "duration" to c.getLong(3),
+                        "type" to c.getInt(4),
+                        "party" to known?.let { listOf(it.optString(2), it.optString(3), it.optString(0)) },
+                    )
+                )
+            }
+        }
+        return out
     }
 
     private fun placeCall(number: String): String = try {

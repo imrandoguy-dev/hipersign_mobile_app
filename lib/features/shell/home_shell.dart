@@ -5,6 +5,7 @@ import '../../app/nav.dart';
 import '../../app/refresh.dart';
 import '../../app/theme.dart';
 import '../../core/auth/session.dart';
+import '../../core/callerid/call_log_sync.dart';
 import '../../core/callerid/caller_directory.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/phone/direct_call.dart';
@@ -89,6 +90,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       await syncCallerDirectory(session.repo);
     } catch (_) {
       // Offline: the pop-up keeps using the last copy.
+    }
+    try {
+      // Work calls -> ERPNext call log (Calling Activity report). Uses the names above.
+      await syncCallLog(session.repo, session.profile!.user);
+    } catch (_) {
+      // Retried on the next resume; calls are only marked sent after a successful upload.
     }
   }
 

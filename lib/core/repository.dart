@@ -259,6 +259,10 @@ class Repository {
     return ((data['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  /// Work calls from the phone's call history -> ERPNext call log (Calling Activity report).
+  Future<Map<String, dynamic>> syncCalls(List<Map<String, dynamic>> calls) async =>
+      Map<String, dynamic>.from(await api.post('calls.sync', {'calls': calls}) as Map);
+
   // ------------------------------------------------------------ call recordings
 
   Future<PageResult<CallRecording>> recordings({String? partyDoctype, String? party, String? cursor}) async {

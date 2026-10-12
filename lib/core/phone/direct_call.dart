@@ -173,3 +173,12 @@ Future<void> setCallerIdEnabled(bool enabled) async {
   if (!Platform.isAndroid) return;
   await _channel.invokeMethod<bool>('setCallerIdEnabled', {'enabled': enabled});
 }
+
+/// Phone call history since [since] (Android). Null when call-log access isn't allowed.
+/// Each row: id, number, date (ms), duration (s), type (1 in, 2 out, 3 missed, 5 rejected...),
+/// party = [doctype, id, name] when the number is a known ERPNext customer / lead / deal.
+Future<List<Map<String, dynamic>>?> readPhoneCallLog(DateTime since) async {
+  if (!Platform.isAndroid) return null;
+  final rows = await _channel.invokeMethod<List<dynamic>>('readCallLog', {'since': since.millisecondsSinceEpoch});
+  return rows?.whereType<Map>().map((m) => m.map((k, v) => MapEntry(k.toString(), v))).toList();
+}
