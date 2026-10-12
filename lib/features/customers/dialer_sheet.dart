@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/nav.dart';
 import '../../app/theme.dart';
 import '../../core/auth/session.dart';
+import '../../core/phone/direct_call.dart';
 import '../../shared/models/models.dart';
 import 'customer_detail_screen.dart';
 
@@ -110,8 +111,7 @@ class _DialerSheetState extends State<_DialerSheet> {
 
   Future<void> _call() async {
     if (!_usable) return;
-    final ok = await launchUrl(Uri.parse('tel:${_clean(_number)}'));
-    if (!ok) showSnack('Could not open the phone dialer.', error: true);
+    await placeCall(_clean(_number));
   }
 
   Future<void> _whatsApp() async {

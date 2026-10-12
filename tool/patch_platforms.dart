@@ -12,6 +12,7 @@ final warnings = <String>[];
 void main() {
   _androidManifest();
   _androidGradle();
+  _androidMainActivity();
   _iosInfoPlist();
   _iosDeploymentTarget();
   _iosAppDelegate();
@@ -52,11 +53,17 @@ void _androidManifest() {
     'android.permission.SCHEDULE_EXACT_ALARM',
     'android.permission.VIBRATE',
     'android.permission.REQUEST_INSTALL_PACKAGES', // in-app updates (sideloaded builds)
+    'android.permission.CALL_PHONE', // place calls directly, no "choose an app" screen
   ];
   final current = s;
   final missing = perms.where((p) => !current.contains('"$p"')).map((p) => '    <uses-permission android:name="$p"/>').join('\n');
   if (missing.isNotEmpty) {
     s = s.replaceFirst('<application', '$missing\n    <application');
+  }
+
+  if (!s.contains('android.hardware.telephony')) {
+    // Calling is optional so the app still installs on tablets without a SIM.
+    s = s.replaceFirst('<application', '<uses-feature android:name="android.hardware.telephony" android:required="false"/>\n    <application');
   }
 
   if (!s.contains('ScheduledNotificationReceiver')) {
@@ -233,3 +240,95 @@ void _iosAppDelegate() {
   }
   _write(path, s, 'AppDelegate.swift (foreground notifications)');
 }
+
+/// MainActivity with the "hipersign/phone" channel: places a call directly (ACTION_CALL),
+/// asking for the Phone permission the first time. Falls back to the dialer in Dart if refused.
+void _androidMainActivity() {
+  final dir = Directory('android/app/src/main/kotlin');
+  if (!dir.existsSync()) {
+    warnings.add('android/app/src/main/kotlin not found - direct calling not installed.');
+    return;
+  }
+  final file = dir
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((f) => f.path.endsWith('MainActivity.kt'))
+      .firstOrNull;
+  if (file == null) {
+    warnings.add('MainActivity.kt not found - direct calling not installed.');
+    return;
+  }
+  final current = file.readAsStringSync();
+  if (current.contains('hipersign/phone')) return;
+  final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
+  final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
+  _write(file.path, code, 'MainActivity.kt (direct calling)');
+}
+
+const _mainActivity = r'''
+package __PACKAGE__
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+class MainActivity : FlutterActivity() {
+    private var pendingNumber: String? = null
+    private var pendingResult: MethodChannel.Result? = null
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "hipersign/phone").setMethodCallHandler { call, result ->
+            if (call.method != "call") {
+                result.notImplemented()
+                return@setMethodCallHandler
+            }
+            val number = call.argument<String>("number")
+            if (number.isNullOrBlank()) {
+                result.success("failed")
+                return@setMethodCallHandler
+            }
+            if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                result.success(placeCall(number))
+            } else {
+                pendingResult?.success("denied")
+                pendingNumber = number
+                pendingResult = result
+                requestPermissions(arrayOf(Manifest.permission.CALL_PHONE), CALL_REQUEST)
+            }
+        }
+    }
+
+    private fun placeCall(number: String): String = try {
+        startActivity(Intent(Intent.ACTION_CALL, Uri.fromParts("tel", number, null)))
+        "called"
+    } catch (e: Exception) {
+        "failed"
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != CALL_REQUEST) return
+        val result = pendingResult
+        val number = pendingNumber
+        pendingResult = null
+        pendingNumber = null
+        if (result == null || number == null) return
+        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            result.success(placeCall(number))
+        } else if (shouldShowRequestPermissionRationale(Manifest.permission.CALL_PHONE)) {
+            result.success("denied")
+        } else {
+            result.success("blocked")
+        }
+    }
+
+    companion object {
+        private const val CALL_REQUEST = 4711
+    }
+}
+''';
