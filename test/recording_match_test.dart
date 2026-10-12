@@ -52,6 +52,22 @@ void main() {
     expect(pickRecording(number: '9847012345', startedAt: start, files: files, used: {'used'})?.uri, 'late');
   });
 
+  test('Xiaomi: number in the folder, contact name in the file', () {
+    final pick = pickRecording(number: '+919495771084', startedAt: start, files: [
+      file('other', '1791808000924.aac', start.add(const Duration(seconds: 20)), path: 'Music/'),
+      file('xiaomi', 'Hipersign ERP-20261012175629.aac', start.add(const Duration(seconds: 40)),
+          path: 'Music/PhoneRecord/9495771084/'),
+    ]);
+    expect(pick?.uri, 'xiaomi');
+  });
+
+  test('call-recording folders are recognised', () {
+    for (final path in ['Music/PhoneRecord/', 'MIUI/sound_recorder/call_rec/', 'Recordings/Call/', 'Sounds/CallRecord/']) {
+      expect(looksLikeCallRecording(file('x', 'Someone.m4a', start, path: path)), isTrue, reason: path);
+    }
+    expect(looksLikeCallRecording(file('x', 'Voice 001.m4a', start, path: 'Recordings/Voice Recorder/')), isFalse);
+  });
+
   test('call entry survives a save/load round trip', () {
     final e = CallEntry(id: 'x1', number: '+919847012345', startedAt: start, party: 'C-1', partyDoctype: 'Customer', partyName: 'Malabar')
       ..status = CallEntry.found

@@ -107,6 +107,23 @@ class CallEntry {
 
 String _digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
+/// Folder / file names phones use for call recordings, e.g.
+/// Music/Recordings/Call Recordings (Realme, Oppo, OnePlus), MIUI/sound_recorder/call_rec,
+/// Music/PhoneRecord/<number>/ (Xiaomi HyperOS), Recordings/Call (Samsung), Sounds/CallRecord (Huawei).
+bool looksLikeCallRecording(PhoneAudioFile f) {
+  final where = '${f.path}/${f.name}'.toLowerCase().replaceAll(RegExp(r'[\s_-]'), '');
+  return const ['call', 'phonerecord', 'voicecall', 'telrecord'].any(where.contains);
+}
+
+/// True when the recording's folder or file name carries the last 7 digits of [number].
+bool mentionsNumber(PhoneAudioFile f, String number) {
+  final tail = _digits(number);
+  if (tail.length < 7) return false;
+  final key = tail.substring(tail.length - 7);
+  // Check folder and file name separately so digits never run together across them.
+  return f.path.split('/').followedBy([f.name]).any((part) => _digits(part).contains(key));
+}
+
 /// Which of the phone's audio files is the recording of a call to [number] started at
 /// [startedAt]? Files must appear between the call start and the next call made from the
 /// app (or 4 hours). A file whose name contains the number wins; otherwise the first file
@@ -120,19 +137,15 @@ PhoneAudioFile? pickRecording({
 }) {
   final windowStart = startedAt.subtract(const Duration(seconds: 15));
   final windowEnd = nextCallAt ?? startedAt.add(const Duration(hours: 4));
-  final tail = _digits(number);
-  final key = tail.length >= 7 ? tail.substring(tail.length - 7) : null;
   final candidates = files
       .where((f) => !used.contains(f.uri) && f.size > 0 && !f.added.isBefore(windowStart) && f.added.isBefore(windowEnd))
       .toList()
     ..sort((a, b) => a.added.compareTo(b.added));
-  if (key != null) {
-    for (final f in candidates) {
-      if (_digits(f.name).contains(key)) return f;
-    }
+  for (final f in candidates) {
+    if (mentionsNumber(f, number)) return f;
   }
   for (final f in candidates) {
-    if ('${f.path}/${f.name}'.toLowerCase().contains('call')) return f;
+    if (looksLikeCallRecording(f)) return f;
   }
   return null;
 }
@@ -400,7 +413,7 @@ class RecordingService extends ChangeNotifier {
     lastCheck = now;
     lastFiles = files.map((f) => '${f.path}${f.name}'.trim()).take(8).toList();
     final callish = files
-        .where((f) => f.size > 0 && !_used.contains(f.uri) && '${f.path}/${f.name}'.toLowerCase().contains('call'))
+        .where((f) => f.size > 0 && !_used.contains(f.uri) && looksLikeCallRecording(f))
         .toList()
       ..sort((a, b) => b.added.compareTo(a.added));
     notifyListeners();
