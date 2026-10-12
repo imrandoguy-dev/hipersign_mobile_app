@@ -153,6 +153,20 @@ class _DialerSheetState extends State<_DialerSheet> {
       final repo = context.read<SessionController>().repo;
       // Link the call (and its recording) to the customer only when the number clearly
       // belongs to one; otherwise it can be linked later from the Recordings screen.
+      // Tapped Call before the lookup finished: wait for it briefly (it is usually 1-2 s).
+      if (_info == null && _clean(number).replaceAll('+', '').length >= 10) {
+        try {
+          final info = await repo.lookupNumber(number).timeout(const Duration(seconds: 6));
+          if (mounted) {
+            setState(() {
+              _info = info;
+              _matches = info.linkable != null ? [info.linkable!] : [];
+            });
+          }
+        } catch (_) {
+          // Slow or offline: call anyway; the recording is linked automatically afterwards.
+        }
+      }
       Party? party = _info?.linkable ?? (_matches.length == 1 ? _matches.first : null);
       final google = _info?.google;
       if (party == null && google != null && _info != null) {

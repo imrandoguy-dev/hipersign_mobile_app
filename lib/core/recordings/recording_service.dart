@@ -27,6 +27,7 @@ class CallEntry {
     this.serverId,
     this.error,
     this.attempts = 0,
+    this.autoLinkTried = false,
   });
 
   static const waiting = 'waiting'; // call made, recording not found yet
@@ -52,6 +53,7 @@ class CallEntry {
   String? serverId;
   String? error;
   int attempts;
+  bool autoLinkTried; // looked the number up (ERP / Google) to link it automatically
 
   bool get hasParty => party != null && partyDoctype != null;
   bool get hasRecording => uri != null;
@@ -84,6 +86,7 @@ class CallEntry {
         'server_id': serverId,
         'error': error,
         'attempts': attempts,
+        'auto_link_tried': autoLinkTried,
       };
 
   factory CallEntry.fromJson(Map<String, dynamic> j) => CallEntry(
@@ -102,6 +105,7 @@ class CallEntry {
         serverId: j['server_id'] as String?,
         error: j['error'] as String?,
         attempts: (j['attempts'] as num?)?.toInt() ?? 0,
+        autoLinkTried: j['auto_link_tried'] == true,
       );
 }
 
@@ -278,6 +282,7 @@ class RecordingService extends ChangeNotifier {
         lastCheck = DateTime.now();
         lastProblem = 'Hipersign is not allowed to read audio files yet.';
       }
+      await _autoLink(repo);
       await _uploadReady(repo);
     } finally {
       _syncing = false;
@@ -315,6 +320,35 @@ class RecordingService extends ChangeNotifier {
           ..status = e.hasParty ? CallEntry.found : CallEntry.unlinked;
       } else if (now.difference(e.startedAt) > _giveUpAfter) {
         e.status = CallEntry.notFound;
+      }
+    }
+  }
+
+  /// Calls made before the number was recognised (e.g. Call tapped before the Google
+  /// result appeared): look the number up now - an ERP customer/lead, or a Google business
+  /// saved as a new lead - and link the recording. Tried once per call.
+  Future<void> _autoLink(Repository repo) async {
+    final todo = _entries
+        .where((e) => !e.hasParty && !e.autoLinkTried && e.status != CallEntry.notFound && _digits(e.number).length >= 10)
+        .toList();
+    for (final e in todo) {
+      try {
+        final info = await repo.lookupNumber(e.number);
+        Party? party = info.linkable;
+        final google = info.google;
+        if (party == null && google != null) {
+          party = await repo.createLead(phone: info.phone, name: google.name, google: google);
+        }
+        e.autoLinkTried = true;
+        if (party != null) {
+          e
+            ..partyDoctype = party.doctype
+            ..party = party.id
+            ..partyName = party.name;
+          if (e.status == CallEntry.unlinked) e.status = CallEntry.found;
+        }
+      } on ApiException catch (err) {
+        if (!err.isNetwork) e.autoLinkTried = true; // offline: try again on the next sync
       }
     }
   }
