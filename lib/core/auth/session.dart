@@ -80,7 +80,14 @@ class SessionController extends ChangeNotifier {
     }
     // Validate the server has the backend app before sending credentials anywhere else.
     final probe = ApiClient(baseUrl: base);
-    config = Map<String, dynamic>.from(await probe.get('auth.get_config') as Map);
+    try {
+      config = Map<String, dynamic>.from(await probe.get('auth.get_config') as Map);
+    } on ApiException catch (e) {
+      if (e.isNetwork) rethrow;
+      // Frappe answers 404/417 when the hipersign_mobile app isn't installed on the site.
+      throw ApiException('NOT_FOUND',
+          'Hipersign Mobile is not installed on ${Uri.parse(base).host} yet. Ask your administrator to install it.', e.status);
+    }
 
     final sid = await ApiClient.login(base, user, password, otp: otp, tmpId: tmpId);
     server = base;
