@@ -237,8 +237,12 @@ class Repository {
   Future<NumberLookup> lookupNumber(String phone) async =>
       NumberLookup.fromJson(Map<String, dynamic>.from(await api.get('customers.lookup_number', {'phone': phone}) as Map));
 
+  /// How many leads this session created (the caller-ID numbers are refreshed after a new one).
+  int leadsCreated = 0;
+
   /// Creates a CRM Lead for an unknown number (or returns the existing one - never duplicates).
   Future<Party> createLead({required String phone, required String name, GooglePlace? google}) async {
+    leadsCreated++;
     final data = Map<String, dynamic>.from(await api.post('customers.create_lead', {
       'phone': phone,
       'name': name,

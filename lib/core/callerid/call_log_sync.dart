@@ -23,18 +23,30 @@ Future<void> syncCallLog(Repository repo, String user, {bool force = false}) asy
   if (!force && DateTime.now().difference(lastRun) < const Duration(minutes: 2)) return;
   await prefs.setInt(atKey, DateTime.now().millisecondsSinceEpoch);
 
-  // First run: the last 3 days only.
-  final since = DateTime.fromMillisecondsSinceEpoch(
+  // First run: the last 3 days. Later: from the last upload, but always re-check the last
+  // 24 hours so calls skipped while their number was still unknown get sent once known.
+  final firstRun = prefs.getInt(sinceKey) == null;
+  final lastSent = DateTime.fromMillisecondsSinceEpoch(
       prefs.getInt(sinceKey) ?? DateTime.now().subtract(const Duration(days: 3)).millisecondsSinceEpoch);
+  final dayAgo = DateTime.now().subtract(const Duration(hours: 24));
+  final since = firstRun || lastSent.isBefore(dayAgo) ? lastSent : dayAgo;
+  final sentKey = 'hm_calllog_sent:$user';
+  final sent = (prefs.getStringList(sentKey) ?? const <String>[]).toSet();
   final rows = await readPhoneCallLog(since);
   if (rows == null || rows.isEmpty) return; // no call-log access, or nothing new
 
   final appCalls = RecordingService.instance.entries;
+  // Numbers already linked on this phone (e.g. a lead created minutes ago from Google).
+  final known = <String, List<String>>{
+    for (final e in appCalls)
+      if (e.party != null && e.partyDoctype != null) _last9(e.number): [e.partyDoctype!, e.party!],
+  };
   final items = <Map<String, dynamic>>[];
-  var newest = since.millisecondsSinceEpoch;
+  var newest = lastSent.millisecondsSinceEpoch;
   for (final r in rows) {
     final date = (r['date'] as num).toInt();
-    if (date > newest) newest = date;
+    final key = '${r['id']}-$date';
+    if (sent.contains(key)) continue;
     final direction = switch ((r['type'] as num?)?.toInt()) {
       2 => 'outgoing',
       1 || 7 => 'incoming',
@@ -50,22 +62,27 @@ Future<void> syncCallLog(Repository repo, String user, {bool force = false}) asy
             .where((e) => _last9(e.number) == _last9(number) && e.startedAt.difference(at).inSeconds.abs() < 120)
             .firstOrNull
         : null;
-    final known = r['party'] is List ? (r['party'] as List).map((e) => e.toString()).toList() : null;
-    if (known == null && fromApp == null) continue; // personal call
+    final party = r['party'] is List ? (r['party'] as List).map((e) => e.toString()).toList() : known[_last9(number)];
+    if (party == null && fromApp == null) continue; // personal (or not known yet: retried later)
+    if (date > newest) newest = date;
     items.add({
-      'key': '${r['id']}-$date',
+      'key': key,
       'number': number,
       'started_at': at.toUtc().toIso8601String(),
       'duration': (r['duration'] as num?)?.toInt() ?? 0,
       'direction': direction,
       'via_app': fromApp != null,
-      'party_doctype': fromApp?.partyDoctype ?? known?[0],
-      'party': fromApp?.party ?? known?[1],
+      'party_doctype': fromApp?.partyDoctype ?? party?[0],
+      'party': fromApp?.party ?? party?[1],
       'activity': fromApp?.activity,
     });
   }
   for (var i = 0; i < items.length; i += 200) {
-    await repo.syncCalls(items.sublist(i, i + 200 > items.length ? items.length : i + 200));
+    final batch = items.sublist(i, i + 200 > items.length ? items.length : i + 200);
+    await repo.syncCalls(batch);
+    sent.addAll(batch.map((b) => b['key'] as String));
   }
+  final keep = sent.length > 600 ? sent.skip(sent.length - 600) : sent;
+  await prefs.setStringList(sentKey, keep.toList());
   await prefs.setInt(sinceKey, newest);
 }

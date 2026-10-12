@@ -29,6 +29,7 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _tab = 0;
+  int _leadsSeen = 0;
 
   @override
   void initState() {
@@ -87,7 +88,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final session = context.read<SessionController>();
     if (!(session.profile?.can('customers') ?? false)) return;
     try {
-      await syncCallerDirectory(session.repo);
+      // Leads created on the phone since the last refresh must be known for incoming calls.
+      await syncCallerDirectory(session.repo, force: session.repo.leadsCreated > _leadsSeen);
+      _leadsSeen = session.repo.leadsCreated;
     } catch (_) {
       // Offline: the pop-up keeps using the last copy.
     }

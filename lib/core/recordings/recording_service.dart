@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../shared/models/models.dart';
 import '../api/api_client.dart';
+import '../callerid/caller_directory.dart';
 import '../phone/direct_call.dart';
 import '../repository.dart';
 
@@ -243,7 +244,6 @@ class RecordingService extends ChangeNotifier {
 
   String get _key => 'hm_call_log_v1:${_user ?? '-'}';
   String get _usedKey => 'hm_used_recordings_v1:${_user ?? '-'}';
-  String get _importKey => 'hm_calllog_import_v1:${_user ?? '-'}';
 
   Future<void> bind(String user, {required bool enabled}) async {
     this.enabled = enabled && supported;
@@ -323,7 +323,7 @@ class RecordingService extends ChangeNotifier {
     _syncing = true;
     try {
       await _load();
-      await _useCallHistory();
+      await _useCallHistory(repo);
       final waiting = _entries.where((e) => e.status == CallEntry.waiting).toList();
       permission = await audioPermission();
       if (waiting.isNotEmpty && permission == 'denied' && askPermission && !_askedThisSession) {
@@ -390,13 +390,21 @@ class RecordingService extends ChangeNotifier {
   ///    recording, so they must not wait for (and wrongly take) the next call's recording;
   /// 2. add connected work calls made outside Hipersign - incoming calls and calls from the
   ///    normal Phone app to ERPNext customers / leads / deals - so their recordings are saved too.
-  Future<void> _useCallHistory() async {
+  DateTime _directoryRefreshedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Numbers of customers / leads / deals this phone already linked calls to - e.g. a lead
+  /// created a minute ago from Google, before the next caller-ID refresh.
+  Map<String, List<String>> _knownFromEntries() => {
+        for (final e in _entries)
+          if (e.hasParty) _last(e.number): [e.partyDoctype!, e.party!, e.partyName ?? e.party!],
+      };
+
+  Future<void> _useCallHistory(Repository repo) async {
     final now = DateTime.now();
-    final prefs = await SharedPreferences.getInstance();
-    final lastImport = DateTime.fromMillisecondsSinceEpoch(
-        prefs.getInt(_importKey) ?? now.subtract(const Duration(hours: 12)).millisecondsSinceEpoch);
     final open = _entries.where((e) => e.status == CallEntry.waiting && !e.logChecked).toList();
-    var since = lastImport;
+    // Always look back 24 hours, so a call skipped because its number wasn't known yet is
+    // picked up once it is (each call is only ever added once).
+    var since = now.subtract(const Duration(hours: 24));
     for (final e in open) {
       final s = e.startedAt.subtract(const Duration(minutes: 2));
       if (s.isBefore(since)) since = s;
@@ -409,11 +417,36 @@ class RecordingService extends ChangeNotifier {
     }
     if (rows == null) return; // no call-log access: fall back to file matching only
 
+    final known = _knownFromEntries();
+    List<String>? partyOf(Map<String, dynamic> r) {
+      final p = r['party'] is List ? (r['party'] as List).map((x) => x.toString()).toList() : null;
+      if (p != null && p.length >= 3) return p;
+      return known[_last(r['number']?.toString() ?? '')];
+    }
+
+    bool connectedWorkCandidate(Map<String, dynamic> r) {
+      final type = (r['type'] as num?)?.toInt();
+      return (type == 1 || type == 2) && ((r['duration'] as num?)?.toInt() ?? 0) > 0;
+    }
+
+    // A connected call from a number we don't recognise may be a customer / lead added in
+    // ERPNext since the last refresh: refresh the numbers now (at most every 10 minutes).
+    if (rows.any((r) => connectedWorkCandidate(r) && partyOf(r) == null) &&
+        now.difference(_directoryRefreshedAt) > const Duration(minutes: 10)) {
+      _directoryRefreshedAt = now;
+      try {
+        await syncCallerDirectory(repo, force: true);
+        rows = await readPhoneCallLog(since) ?? rows;
+      } catch (_) {
+        // offline: try again next time
+      }
+    }
+
     // 1) calls started from Hipersign
     for (final e in open) {
       Map<String, dynamic>? best;
       var bestGap = 1 << 30;
-      for (final r in rows) {
+      for (final r in rows!) {
         if ((r['type'] as num?)?.toInt() != 2) continue; // outgoing
         if (_digits(r['number']?.toString() ?? '').endsWith(_last(e.number)) == false) continue;
         final gap = DateTime.fromMillisecondsSinceEpoch((r['date'] as num).toInt()).difference(e.startedAt).inSeconds.abs();
@@ -437,16 +470,11 @@ class RecordingService extends ChangeNotifier {
     }
 
     // 2) connected work calls made outside Hipersign (incoming, or from the Phone app)
-    var newest = lastImport.millisecondsSinceEpoch;
-    for (final r in rows) {
+    for (final r in rows!) {
+      if (!connectedWorkCandidate(r)) continue;
+      final party = partyOf(r);
+      if (party == null) continue; // not an ERPNext number: personal call
       final date = (r['date'] as num).toInt();
-      if (date <= lastImport.millisecondsSinceEpoch) continue;
-      if (date > newest) newest = date;
-      final type = (r['type'] as num?)?.toInt();
-      final seconds = (r['duration'] as num?)?.toInt() ?? 0;
-      if ((type != 1 && type != 2) || seconds == 0) continue; // only connected in/out calls
-      final party = r['party'] is List ? (r['party'] as List).map((x) => x.toString()).toList() : null;
-      if (party == null || party.length < 3) continue; // not an ERPNext number: personal call
       final number = r['number']?.toString() ?? '';
       final at = DateTime.fromMillisecondsSinceEpoch(date);
       final already = _entries.any(
@@ -459,13 +487,12 @@ class RecordingService extends ChangeNotifier {
         partyDoctype: party[0],
         party: party[1],
         partyName: party[2],
-        incoming: type == 1,
+        incoming: (r['type'] as num?)?.toInt() == 1,
         callAt: at,
-        callSeconds: seconds,
+        callSeconds: (r['duration'] as num?)?.toInt() ?? 0,
         logChecked: true,
       ));
     }
-    await prefs.setInt(_importKey, newest);
   }
 
   static String _last(String number) {
