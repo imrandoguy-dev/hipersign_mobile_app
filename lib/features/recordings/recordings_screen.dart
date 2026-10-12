@@ -285,6 +285,7 @@ class _RecordingsScreenState extends State<RecordingsScreen> with WidgetsBinding
                   id: 'local:${e.id}',
                   title: e.title,
                   subtitle: [
+                    if (e.incoming) 'Incoming',
                     _when(e.startedAt),
                     if (e.durationMs > 0) fmtDuration((e.durationMs / 1000).round()),
                     if (e.partyName != null) e.number,

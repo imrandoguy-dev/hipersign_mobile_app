@@ -28,6 +28,10 @@ class CallEntry {
     this.error,
     this.attempts = 0,
     this.autoLinkTried = false,
+    this.incoming = false,
+    this.callAt,
+    this.callSeconds,
+    this.logChecked = false,
   });
 
   static const waiting = 'waiting'; // call made, recording not found yet
@@ -37,6 +41,7 @@ class CallEntry {
   static const uploaded = 'uploaded';
   static const failed = 'failed';
   static const notFound = 'not_found';
+  static const notConnected = 'not_connected'; // cancelled / unanswered: there is no recording
 
   final String id; // also the upload's client key (retries never duplicate)
   final String number;
@@ -54,6 +59,10 @@ class CallEntry {
   String? error;
   int attempts;
   bool autoLinkTried; // looked the number up (ERP / Google) to link it automatically
+  bool incoming; // an incoming call (taken from the phone's call history)
+  DateTime? callAt; // when the call really started (phone's call history)
+  int? callSeconds; // how long it lasted (phone's call history)
+  bool logChecked; // compared with the phone's call history
 
   bool get hasParty => party != null && partyDoctype != null;
   bool get hasRecording => uri != null;
@@ -67,6 +76,7 @@ class CallEntry {
         uploaded => 'Saved to ERP',
         failed => error ?? 'Upload failed - will try again',
         notFound => 'No recording found',
+        notConnected => 'Not connected - no recording',
         _ => status,
       };
 
@@ -87,6 +97,10 @@ class CallEntry {
         'error': error,
         'attempts': attempts,
         'auto_link_tried': autoLinkTried,
+        'incoming': incoming,
+        'call_at': callAt?.millisecondsSinceEpoch,
+        'call_seconds': callSeconds,
+        'log_checked': logChecked,
       };
 
   factory CallEntry.fromJson(Map<String, dynamic> j) => CallEntry(
@@ -106,6 +120,10 @@ class CallEntry {
         error: j['error'] as String?,
         attempts: (j['attempts'] as num?)?.toInt() ?? 0,
         autoLinkTried: j['auto_link_tried'] == true,
+        incoming: j['incoming'] == true,
+        callAt: j['call_at'] == null ? null : DateTime.fromMillisecondsSinceEpoch((j['call_at'] as num).toInt()),
+        callSeconds: (j['call_seconds'] as num?)?.toInt(),
+        logChecked: j['log_checked'] == true,
       );
 }
 
@@ -128,19 +146,50 @@ bool mentionsNumber(PhoneAudioFile f, String number) {
   return f.path.split('/').followedBy([f.name]).any((part) => _digits(part).contains(key));
 }
 
+/// Phone-number-like digit runs (10-13 digits) in the folder / file name, ignoring
+/// timestamps such as 20261012175629 or 202610121756.
+List<String> _numbersIn(PhoneAudioFile f) {
+  final out = <String>[];
+  for (final part in f.path.split('/').followedBy([f.name])) {
+    for (final m in RegExp(r'\d{10,13}').allMatches(part.replaceAll(RegExp(r'[\s()+-]'), ''))) {
+      final run = m.group(0)!;
+      final month = run.length >= 6 ? int.tryParse(run.substring(4, 6)) ?? 0 : 0;
+      final looksLikeDate = run.startsWith('20') && month >= 1 && month <= 12;
+      if (!looksLikeDate) out.add(run);
+    }
+  }
+  return out;
+}
+
+/// True when the file is clearly the recording of a call with a *different* number
+/// (e.g. Xiaomi's Music/PhoneRecord/<number>/ folder for another caller).
+bool mentionsOtherNumber(PhoneAudioFile f, String number) {
+  final tail = _digits(number);
+  if (tail.length < 7) return false;
+  final key = tail.substring(tail.length - 7);
+  final numbers = _numbersIn(f);
+  return numbers.isNotEmpty && !numbers.any((n) => n.contains(key));
+}
+
 /// Which of the phone's audio files is the recording of a call to [number] started at
-/// [startedAt]? Files must appear between the call start and the next call made from the
-/// app (or 4 hours). A file whose name contains the number wins; otherwise the first file
-/// saved in a call-recording folder ("call" in its folder or name).
+/// [startedAt]? Files must appear between the call start and the next call (or 4 hours;
+/// when the phone's call history gives the real length, just after the call ends).
+/// A file whose name/folder contains the number wins; otherwise the first file saved in a
+/// call-recording folder - never one that names a different number.
 PhoneAudioFile? pickRecording({
   required String number,
   required DateTime startedAt,
   DateTime? nextCallAt,
+  int? callSeconds,
   required List<PhoneAudioFile> files,
   Set<String> used = const {},
 }) {
   final windowStart = startedAt.subtract(const Duration(seconds: 15));
-  final windowEnd = nextCallAt ?? startedAt.add(const Duration(hours: 4));
+  var windowEnd = nextCallAt ?? startedAt.add(const Duration(hours: 4));
+  if (callSeconds != null) {
+    final callEnd = startedAt.add(Duration(seconds: callSeconds + 180));
+    if (callEnd.isBefore(windowEnd)) windowEnd = callEnd;
+  }
   final candidates = files
       .where((f) => !used.contains(f.uri) && f.size > 0 && !f.added.isBefore(windowStart) && f.added.isBefore(windowEnd))
       .toList()
@@ -149,7 +198,7 @@ PhoneAudioFile? pickRecording({
     if (mentionsNumber(f, number)) return f;
   }
   for (final f in candidates) {
-    if (looksLikeCallRecording(f)) return f;
+    if (looksLikeCallRecording(f) && !mentionsOtherNumber(f, number)) return f;
   }
   return null;
 }
@@ -185,12 +234,16 @@ class RecordingService extends ChangeNotifier {
 
   /// Calls whose recording is not in ERP yet (newest first).
   List<CallEntry> get pending =>
-      _entries.where((e) => e.status != CallEntry.uploaded).toList()..sort((a, b) => b.startedAt.compareTo(a.startedAt));
+      _entries
+          .where((e) => e.status != CallEntry.uploaded && e.status != CallEntry.notConnected)
+          .toList()
+        ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
 
   bool get supported => Platform.isAndroid;
 
   String get _key => 'hm_call_log_v1:${_user ?? '-'}';
   String get _usedKey => 'hm_used_recordings_v1:${_user ?? '-'}';
+  String get _importKey => 'hm_calllog_import_v1:${_user ?? '-'}';
 
   Future<void> bind(String user, {required bool enabled}) async {
     this.enabled = enabled && supported;
@@ -270,6 +323,7 @@ class RecordingService extends ChangeNotifier {
     _syncing = true;
     try {
       await _load();
+      await _useCallHistory();
       final waiting = _entries.where((e) => e.status == CallEntry.waiting).toList();
       permission = await audioPermission();
       if (waiting.isNotEmpty && permission == 'denied' && askPermission && !_askedThisSession) {
@@ -308,7 +362,14 @@ class RecordingService extends ChangeNotifier {
     lastFiles = files.map((f) => '${f.path}${f.name}'.trim()).take(8).toList();
     for (final e in waiting) {
       final next = all.where((o) => o.startedAt.isAfter(e.startedAt)).map((o) => o.startedAt).firstOrNull;
-      final pick = pickRecording(number: e.number, startedAt: e.startedAt, nextCallAt: next, files: files, used: _used);
+      final pick = pickRecording(
+        number: e.number,
+        startedAt: e.callAt ?? e.startedAt,
+        nextCallAt: next,
+        callSeconds: e.callSeconds,
+        files: files,
+        used: _used,
+      );
 
       if (pick != null) {
         _used.add(pick.uri);
@@ -322,6 +383,94 @@ class RecordingService extends ChangeNotifier {
         e.status = CallEntry.notFound;
       }
     }
+  }
+
+  /// Uses the phone's call history (when Hipersign may read it) to:
+  /// 1. mark calls from Hipersign that never connected (cancelled / unanswered) - they have no
+  ///    recording, so they must not wait for (and wrongly take) the next call's recording;
+  /// 2. add connected work calls made outside Hipersign - incoming calls and calls from the
+  ///    normal Phone app to ERPNext customers / leads / deals - so their recordings are saved too.
+  Future<void> _useCallHistory() async {
+    final now = DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    final lastImport = DateTime.fromMillisecondsSinceEpoch(
+        prefs.getInt(_importKey) ?? now.subtract(const Duration(hours: 12)).millisecondsSinceEpoch);
+    final open = _entries.where((e) => e.status == CallEntry.waiting && !e.logChecked).toList();
+    var since = lastImport;
+    for (final e in open) {
+      final s = e.startedAt.subtract(const Duration(minutes: 2));
+      if (s.isBefore(since)) since = s;
+    }
+    List<Map<String, dynamic>>? rows;
+    try {
+      rows = await readPhoneCallLog(since);
+    } catch (_) {
+      rows = null;
+    }
+    if (rows == null) return; // no call-log access: fall back to file matching only
+
+    // 1) calls started from Hipersign
+    for (final e in open) {
+      Map<String, dynamic>? best;
+      var bestGap = 1 << 30;
+      for (final r in rows) {
+        if ((r['type'] as num?)?.toInt() != 2) continue; // outgoing
+        if (_digits(r['number']?.toString() ?? '').endsWith(_last(e.number)) == false) continue;
+        final gap = DateTime.fromMillisecondsSinceEpoch((r['date'] as num).toInt()).difference(e.startedAt).inSeconds.abs();
+        if (gap < 120 && gap < bestGap) {
+          best = r;
+          bestGap = gap;
+        }
+      }
+      if (best != null) {
+        e
+          ..logChecked = true
+          ..callAt = DateTime.fromMillisecondsSinceEpoch((best['date'] as num).toInt())
+          ..callSeconds = (best['duration'] as num?)?.toInt() ?? 0;
+        if ((e.callSeconds ?? 0) == 0) e.status = CallEntry.notConnected;
+      } else if (now.difference(e.startedAt) > const Duration(minutes: 10)) {
+        // Not in the call history at all: the call was cancelled before it was placed.
+        e
+          ..logChecked = true
+          ..status = CallEntry.notConnected;
+      }
+    }
+
+    // 2) connected work calls made outside Hipersign (incoming, or from the Phone app)
+    var newest = lastImport.millisecondsSinceEpoch;
+    for (final r in rows) {
+      final date = (r['date'] as num).toInt();
+      if (date <= lastImport.millisecondsSinceEpoch) continue;
+      if (date > newest) newest = date;
+      final type = (r['type'] as num?)?.toInt();
+      final seconds = (r['duration'] as num?)?.toInt() ?? 0;
+      if ((type != 1 && type != 2) || seconds == 0) continue; // only connected in/out calls
+      final party = r['party'] is List ? (r['party'] as List).map((x) => x.toString()).toList() : null;
+      if (party == null || party.length < 3) continue; // not an ERPNext number: personal call
+      final number = r['number']?.toString() ?? '';
+      final at = DateTime.fromMillisecondsSinceEpoch(date);
+      final already = _entries.any(
+          (e) => _last(e.number) == _last(number) && (e.callAt ?? e.startedAt).difference(at).inSeconds.abs() < 120);
+      if (already) continue;
+      _entries.add(CallEntry(
+        id: '${_user.hashCode.toRadixString(16)}-log-${r['id']}-$date',
+        number: number,
+        startedAt: at,
+        partyDoctype: party[0],
+        party: party[1],
+        partyName: party[2],
+        incoming: type == 1,
+        callAt: at,
+        callSeconds: seconds,
+        logChecked: true,
+      ));
+    }
+    await prefs.setInt(_importKey, newest);
+  }
+
+  static String _last(String number) {
+    final d = _digits(number);
+    return d.length > 9 ? d.substring(d.length - 9) : d;
   }
 
   /// Calls made before the number was recognised (e.g. Call tapped before the Google

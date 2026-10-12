@@ -68,6 +68,27 @@ void main() {
     expect(looksLikeCallRecording(file('x', 'Voice 001.m4a', start, path: 'Recordings/Voice Recorder/')), isFalse);
   });
 
+  test('bug: a cancelled call never takes the next caller\'s recording (Xiaomi folders)', () {
+    // Our call to 98470 12345 was cancelled; an incoming call from 94957 71084 was recorded.
+    final pick = pickRecording(number: '+919847012345', startedAt: start, files: [
+      file('incoming', 'Hipersign ERP-20261012101530.aac', start.add(const Duration(minutes: 3)),
+          path: 'Music/PhoneRecord/9495771084/'),
+    ]);
+    expect(pick, isNull);
+  });
+
+  test('timestamps in names are not phone numbers', () {
+    final f = file('a', 'Arjun-20261012175629.aac', start.add(const Duration(seconds: 30)), path: 'Recordings/Call/');
+    expect(mentionsOtherNumber(f, '+919847012345'), isFalse);
+    expect(pickRecording(number: '+919847012345', startedAt: start, files: [f])?.uri, 'a');
+  });
+
+  test('known call length keeps the window tight', () {
+    final late = file('late', 'Someone.m4a', start.add(const Duration(minutes: 20)), path: 'Recordings/Call/');
+    expect(pickRecording(number: '9847012345', startedAt: start, callSeconds: 60, files: [late]), isNull);
+    expect(pickRecording(number: '9847012345', startedAt: start, files: [late])?.uri, 'late');
+  });
+
   test('call entry survives a save/load round trip', () {
     final e = CallEntry(id: 'x1', number: '+919847012345', startedAt: start, party: 'C-1', partyDoctype: 'Customer', partyName: 'Malabar')
       ..status = CallEntry.found
@@ -77,5 +98,12 @@ void main() {
     expect(back.status, CallEntry.found);
     expect(back.hasRecording, isTrue);
     expect(back.startedAt, start);
+    final incoming = CallEntry.fromJson((CallEntry(id: 'x2', number: '1', startedAt: start)
+          ..incoming = true
+          ..callSeconds = 42
+          ..callAt = start
+          ..logChecked = true)
+        .toJson());
+    expect([incoming.incoming, incoming.callSeconds, incoming.logChecked, incoming.callAt], [true, 42, true, start]);
   });
 }
