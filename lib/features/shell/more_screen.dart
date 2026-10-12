@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -5,6 +7,7 @@ import '../../app/theme.dart';
 import '../../core/auth/session.dart';
 import '../activities/activity_list_screen.dart';
 import '../notifications/notifications_screen.dart';
+import '../recordings/recordings_screen.dart';
 import '../settings/settings_screen.dart';
 import '../trials/trials_screen.dart';
 
@@ -43,6 +46,8 @@ class MoreScreen extends StatelessWidget {
           _Tile(icon: Icons.groups_2_outlined, title: 'Meetings', onTap: () => open(const ActivityListScreen(meetings: true))),
         if (p.can('trial_booking'))
           _Tile(icon: Icons.school_outlined, title: 'Trials & training', onTap: () => open(const TrialsScreen())),
+        if (Platform.isAndroid && p.can('call_recordings'))
+          _Tile(icon: Icons.graphic_eq, title: 'Call recordings', onTap: () => open(const RecordingsScreen())),
         _Tile(icon: Icons.notifications_none, title: 'Notifications', onTap: () => open(const NotificationsScreen())),
         _Tile(icon: Icons.settings_outlined, title: 'Settings', onTap: () => open(const SettingsScreen())),
         const SizedBox(height: 8),

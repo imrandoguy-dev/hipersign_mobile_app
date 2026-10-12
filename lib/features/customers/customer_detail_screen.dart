@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,12 +7,15 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
+import '../../core/recordings/recording_service.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/activity_card.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../activities/activity_detail_screen.dart';
 import '../activities/activity_form.dart';
+import '../recordings/recording_widgets.dart';
+import '../recordings/recordings_screen.dart';
 import '../trials/book_trial_screen.dart';
 
 class CustomerDetailScreen extends StatefulWidget {
@@ -30,11 +35,46 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   Activity? _next;
   ApiException? _error;
   bool _loading = true;
+  List<CallRecording> _recordings = [];
+  final _player = RecordingPlayer();
+
+  bool get _showRecordings =>
+      Platform.isAndroid && (context.read<SessionController>().profile?.can('call_recordings') ?? false);
 
   @override
   void initState() {
     super.initState();
+    RecordingService.instance.addListener(_onRecordings);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    RecordingService.instance.removeListener(_onRecordings);
+    _player.dispose();
+    super.dispose();
+  }
+
+  int _uploadedCount = -1;
+
+  void _onRecordings() {
+    final n = RecordingService.instance.entries.where((e) => e.status == CallEntry.uploaded).length;
+    if (n != _uploadedCount) {
+      _uploadedCount = n;
+      _loadRecordings();
+    } else if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _loadRecordings() async {
+    if (!mounted || !_showRecordings) return;
+    try {
+      final page = await context.read<SessionController>().repo.recordings(partyDoctype: widget.doctype, party: widget.name);
+      if (mounted) setState(() => _recordings = page.items);
+    } on ApiException {
+      // Recordings are extra; the customer page still works without them.
+    }
   }
 
   Future<void> _load() async {
@@ -50,6 +90,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         _next = d['next_activity'] is Map ? Activity.fromJson(Map<String, dynamic>.from(d['next_activity'] as Map)) : null;
         _error = null;
       });
+      _loadRecordings();
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e);
     } finally {
@@ -115,7 +156,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                                   style: TextStyle(fontSize: 12, color: ph.valid ? HsColors.textSecondary : HsColors.danger)),
                             ]),
                           ),
-                          ContactButtons(phone: ph),
+                          ContactButtons(phone: ph, party: p),
                         ]),
                       ),
                   ]),
@@ -163,9 +204,55 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                     child: Text('No activities with this customer yet.', style: TextStyle(color: HsColors.textSecondary)),
                   ),
                 for (final a in _activities) ActivityCard(activity: a, onTap: () => _open(a)),
+                if (_showRecordings) ..._recordingSection(p),
               ]),
             ),
     );
+  }
+
+  List<Widget> _recordingSection(Party p) {
+    final repo = context.read<SessionController>().repo;
+    final waiting = RecordingService.instance.pending
+        .where((e) => e.party == p.id && e.partyDoctype == p.doctype && e.status != CallEntry.notFound)
+        .toList();
+    return [
+      SectionHeader('Call recordings', count: _recordings.length),
+      if (_recordings.isEmpty && waiting.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20),
+          child: Text('No call recordings yet.', style: TextStyle(color: HsColors.textSecondary)),
+        ),
+      for (final e in waiting)
+        RecordingRow(
+          id: 'local:${e.id}',
+          title: 'Call ${fmtDayTime(e.startedAt)}',
+          subtitle: e.statusLabel,
+          player: _player,
+          resolvePath: e.hasRecording ? () => RecordingService.instance.localFile(e) : null,
+        ),
+      for (final r in _recordings)
+        RecordingRow(
+          id: r.id,
+          title: fmtDayTime(r.startedAt),
+          subtitle: [
+            fmtDuration(r.durationSeconds),
+            if (r.recordedByName != null) 'by ${r.recordedByName}',
+          ].join('  ·  '),
+          player: _player,
+          resolvePath: () => repo.recordingFile(r),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            icon: const Icon(Icons.graphic_eq, size: 18),
+            label: const Text('All call recordings'),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecordingsScreen())),
+          ),
+        ),
+      ),
+    ];
   }
 
   Future<void> _open(Activity a) async {

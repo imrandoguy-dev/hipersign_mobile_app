@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,7 @@ import '../../core/auth/session.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
+import '../recordings/recordings_screen.dart';
 import 'customer_detail_screen.dart';
 
 class CustomersScreen extends StatefulWidget {
@@ -96,7 +98,17 @@ class _CustomersScreenState extends State<CustomersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Customers', style: TextStyle(fontWeight: FontWeight.w700))),
+      appBar: AppBar(
+        title: const Text('Customers', style: TextStyle(fontWeight: FontWeight.w700)),
+        actions: [
+          if (Platform.isAndroid && context.read<SessionController>().profile!.can('call_recordings'))
+            IconButton(
+              tooltip: 'Call recordings',
+              icon: const Icon(Icons.graphic_eq),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecordingsScreen())),
+            ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: NotificationListener<ScrollNotification>(
@@ -206,7 +218,7 @@ class _PartyTile extends StatelessWidget {
                   ),
                 ]),
               ),
-              ContactButtons(phone: p.primaryPhone),
+              ContactButtons(phone: p.primaryPhone, party: p),
             ]),
           ),
         ),

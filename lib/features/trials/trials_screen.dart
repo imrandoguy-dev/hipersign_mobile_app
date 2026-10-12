@@ -153,7 +153,7 @@ class BookingCard extends StatelessWidget {
               ),
               if (b.party != null) ...[
                 const SizedBox(width: 10),
-                ContactButtons(phone: b.party!.primaryPhone, dark: true),
+                ContactButtons(phone: b.party!.primaryPhone, party: b.party, dark: true),
               ],
             ]),
           ),

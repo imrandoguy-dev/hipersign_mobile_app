@@ -164,7 +164,7 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
                         child: Text(b.party!.primaryPhone?.e164 ?? 'No phone number',
                             style: const TextStyle(fontSize: 15)),
                       ),
-                      ContactButtons(phone: b.party!.primaryPhone),
+                      ContactButtons(phone: b.party!.primaryPhone, party: b.party),
                     ]),
                   ),
                 if (b.notes != null) ...[const SizedBox(height: 12), Text('Notes: ${b.notes}')],

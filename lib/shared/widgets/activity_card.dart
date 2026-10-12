@@ -79,6 +79,8 @@ class ActivityCard extends StatelessWidget {
                   const SizedBox(width: 10),
                   ContactButtons(
                     phone: a.party!.primaryPhone,
+                    party: a.party,
+                    activityId: a.id,
                     dark: true,
                     onCall: onContact == null ? null : () => onContact!('Call'),
                     onWhatsApp: onContact == null ? null : () => onContact!('WhatsApp'),

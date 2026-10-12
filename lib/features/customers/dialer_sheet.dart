@@ -9,6 +9,7 @@ import '../../app/nav.dart';
 import '../../app/theme.dart';
 import '../../core/auth/session.dart';
 import '../../core/phone/direct_call.dart';
+import '../../core/recordings/recording_service.dart';
 import '../../shared/models/models.dart';
 import 'customer_detail_screen.dart';
 
@@ -111,7 +112,17 @@ class _DialerSheetState extends State<_DialerSheet> {
 
   Future<void> _call() async {
     if (!_usable) return;
-    await placeCall(_clean(_number));
+    final number = _clean(_number);
+    // Link the recording to the customer only when the number clearly belongs to one;
+    // otherwise it can be linked later from the Recordings screen.
+    final match = _matches.length == 1 ? _matches.first : null;
+    await RecordingService.instance.noteCall(
+      number: number,
+      partyDoctype: match?.doctype,
+      party: match?.id,
+      partyName: match?.name,
+    );
+    await placeCall(number);
   }
 
   Future<void> _whatsApp() async {

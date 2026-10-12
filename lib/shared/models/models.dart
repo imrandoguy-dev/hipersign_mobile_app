@@ -312,3 +312,55 @@ class AppNotice {
         problem: str(j['delivery_problem']),
       );
 }
+
+class CallRecording {
+  CallRecording({
+    required this.id,
+    required this.partyDoctype,
+    required this.party,
+    required this.partyName,
+    this.phone,
+    this.startedAt,
+    this.durationSeconds = 0,
+    this.recordedBy,
+    this.recordedByName,
+    this.activity,
+    this.size = 0,
+    this.ext,
+  });
+
+  final String id;
+  final String partyDoctype;
+  final String party;
+  final String partyName;
+  final String? phone;
+  final DateTime? startedAt;
+  final int durationSeconds;
+  final String? recordedBy;
+  final String? recordedByName;
+  final String? activity;
+  final int size;
+  final String? ext;
+
+  factory CallRecording.fromJson(Map<String, dynamic> j) => CallRecording(
+        id: j['id']?.toString() ?? '',
+        partyDoctype: j['party_doctype']?.toString() ?? '',
+        party: j['party']?.toString() ?? '',
+        partyName: j['party_name']?.toString() ?? '',
+        phone: str(j['phone']),
+        startedAt: DateTime.tryParse(j['started_at']?.toString() ?? '')?.toLocal(),
+        durationSeconds: (j['duration_seconds'] as num?)?.toInt() ?? 0,
+        recordedBy: str(j['recorded_by']),
+        recordedByName: str(j['recorded_by_name']),
+        activity: str(j['activity']),
+        size: (j['size'] as num?)?.toInt() ?? 0,
+        ext: str(j['ext']),
+      );
+}
+
+String fmtDuration(int seconds) {
+  final m = seconds ~/ 60;
+  final s = seconds % 60;
+  if (m >= 60) return '${m ~/ 60}:${(m % 60).toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  return '$m:${s.toString().padLeft(2, '0')}';
+}

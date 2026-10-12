@@ -54,11 +54,17 @@ void _androidManifest() {
     'android.permission.VIBRATE',
     'android.permission.REQUEST_INSTALL_PACKAGES', // in-app updates (sideloaded builds)
     'android.permission.CALL_PHONE', // place calls directly, no "choose an app" screen
+    'android.permission.READ_MEDIA_AUDIO', // find the phone's own call recordings (Android 13+)
   ];
   final current = s;
   final missing = perms.where((p) => !current.contains('"$p"')).map((p) => '    <uses-permission android:name="$p"/>').join('\n');
   if (missing.isNotEmpty) {
     s = s.replaceFirst('<application', '$missing\n    <application');
+  }
+
+  if (!s.contains('android.permission.READ_EXTERNAL_STORAGE')) {
+    // Older Android (12 and below) uses this instead of READ_MEDIA_AUDIO.
+    s = s.replaceFirst('<application', '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application');
   }
 
   if (!s.contains('android.hardware.telephony')) {
@@ -241,8 +247,7 @@ void _iosAppDelegate() {
   _write(path, s, 'AppDelegate.swift (foreground notifications)');
 }
 
-/// MainActivity with the "hipersign/phone" channel: places a call directly (ACTION_CALL),
-/// asking for the Phone permission the first time. Falls back to the dialer in Dart if refused.
+/// MainActivity with the "hipersign/phone" channel: direct calling and finding call recordings.
 void _androidMainActivity() {
   final dir = Directory('android/app/src/main/kotlin');
   if (!dir.existsSync()) {
@@ -259,7 +264,7 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('hipersign/phone')) return;
+  if (current.contains('findRecordings')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
@@ -269,36 +274,109 @@ const _mainActivity = r'''
 package __PACKAGE__
 
 import android.Manifest
+import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
+// Hipersign native helpers (channel "hipersign/phone"):
+//  - call:            place a call directly (ACTION_CALL), asking for the Phone permission once
+//  - audioPermission: check / request access to audio files (to find the phone's call recordings)
+//  - findRecordings:  audio files added or changed in a time window (MediaStore)
+//  - copyRecording:   copy one recording into the app cache for upload / playback
+//  - openAppSettings: open this app's system settings page
 class MainActivity : FlutterActivity() {
     private var pendingNumber: String? = null
-    private var pendingResult: MethodChannel.Result? = null
+    private var pendingCallResult: MethodChannel.Result? = null
+    private var pendingAudioResult: MethodChannel.Result? = null
+
+    private val audioPermission: String
+        get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
+        else Manifest.permission.READ_EXTERNAL_STORAGE
+
+    private fun granted(permission: String) =
+        checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "hipersign/phone").setMethodCallHandler { call, result ->
-            if (call.method != "call") {
-                result.notImplemented()
-                return@setMethodCallHandler
-            }
-            val number = call.argument<String>("number")
-            if (number.isNullOrBlank()) {
-                result.success("failed")
-                return@setMethodCallHandler
-            }
-            if (checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
-                result.success(placeCall(number))
-            } else {
-                pendingResult?.success("denied")
-                pendingNumber = number
-                pendingResult = result
-                requestPermissions(arrayOf(Manifest.permission.CALL_PHONE), CALL_REQUEST)
+            when (call.method) {
+                "call" -> {
+                    val number = call.argument<String>("number")
+                    if (number.isNullOrBlank()) {
+                        result.success("failed")
+                    } else if (granted(Manifest.permission.CALL_PHONE)) {
+                        result.success(placeCall(number))
+                    } else {
+                        pendingCallResult?.success("denied")
+                        pendingNumber = number
+                        pendingCallResult = result
+                        requestPermissions(arrayOf(Manifest.permission.CALL_PHONE), CALL_REQUEST)
+                    }
+                }
+                "audioPermission" -> {
+                    val request = call.argument<Boolean>("request") ?: false
+                    if (granted(audioPermission)) {
+                        result.success("granted")
+                    } else if (!request) {
+                        result.success("denied")
+                    } else {
+                        pendingAudioResult?.success("denied")
+                        pendingAudioResult = result
+                        requestPermissions(arrayOf(audioPermission), AUDIO_REQUEST)
+                    }
+                }
+                "findRecordings" -> {
+                    val since = call.argument<Number>("since")?.toLong() ?: 0L
+                    val until = call.argument<Number>("until")?.toLong() ?: System.currentTimeMillis()
+                    if (!granted(audioPermission)) {
+                        result.success(ArrayList<Map<String, Any?>>())
+                    } else {
+                        Thread {
+                            try {
+                                val found = findRecordings(since, until)
+                                runOnUiThread { result.success(found) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("FIND_FAILED", e.message, null) }
+                            }
+                        }.start()
+                    }
+                }
+                "copyRecording" -> {
+                    val uri = call.argument<String>("uri")
+                    val name = call.argument<String>("name") ?: "recording.m4a"
+                    if (uri.isNullOrBlank()) {
+                        result.error("BAD_URI", "No recording", null)
+                    } else {
+                        Thread {
+                            try {
+                                val path = copyRecording(uri, name)
+                                runOnUiThread { result.success(path) }
+                            } catch (e: Exception) {
+                                runOnUiThread { result.error("COPY_FAILED", e.message, null) }
+                            }
+                        }.start()
+                    }
+                }
+                "openAppSettings" -> {
+                    try {
+                        startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                else -> result.notImplemented()
             }
         }
     }
@@ -310,25 +388,93 @@ class MainActivity : FlutterActivity() {
         "failed"
     }
 
+    private fun findRecordings(since: Long, until: Long): ArrayList<Map<String, Any?>> {
+        val out = ArrayList<Map<String, Any?>>()
+        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        val pathColumn = if (Build.VERSION.SDK_INT >= 29) MediaStore.Audio.Media.RELATIVE_PATH
+        else MediaStore.Audio.Media.DATA
+        val columns = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.DATE_MODIFIED,
+            MediaStore.Audio.Media.DURATION,
+            pathColumn,
+        )
+        val s = (since / 1000).toString()
+        val u = (until / 1000).toString()
+        val added = MediaStore.Audio.Media.DATE_ADDED
+        val modified = MediaStore.Audio.Media.DATE_MODIFIED
+        val selection = "(($added >= ? AND $added <= ?) OR ($modified >= ? AND $modified <= ?))"
+        contentResolver.query(collection, columns, selection, arrayOf(s, u, s, u), "$added ASC")?.use { c ->
+            val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val nameCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val sizeCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val addedCol = c.getColumnIndexOrThrow(added)
+            val modifiedCol = c.getColumnIndexOrThrow(modified)
+            val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val pathCol = c.getColumnIndexOrThrow(pathColumn)
+            while (c.moveToNext()) {
+                val id = c.getLong(idCol)
+                out.add(
+                    mapOf(
+                        "uri" to ContentUris.withAppendedId(collection, id).toString(),
+                        "name" to (c.getString(nameCol) ?: ""),
+                        "size" to c.getLong(sizeCol),
+                        "added" to c.getLong(addedCol) * 1000L,
+                        "modified" to c.getLong(modifiedCol) * 1000L,
+                        "duration" to c.getLong(durationCol),
+                        "path" to (c.getString(pathCol) ?: ""),
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    private fun copyRecording(uriString: String, name: String): String {
+        val dir = File(cacheDir, "recordings")
+        dir.mkdirs()
+        val safe = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifEmpty { "recording.m4a" }
+        val dest = File(dir, safe)
+        val input = contentResolver.openInputStream(Uri.parse(uriString))
+            ?: throw IllegalStateException("Cannot open the recording")
+        input.use { source -> dest.outputStream().use { target -> source.copyTo(target) } }
+        return dest.absolutePath
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != CALL_REQUEST) return
-        val result = pendingResult
-        val number = pendingNumber
-        pendingResult = null
-        pendingNumber = null
-        if (result == null || number == null) return
-        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            result.success(placeCall(number))
-        } else if (shouldShowRequestPermissionRationale(Manifest.permission.CALL_PHONE)) {
-            result.success("denied")
-        } else {
-            result.success("blocked")
+        val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        when (requestCode) {
+            CALL_REQUEST -> {
+                val result = pendingCallResult
+                val number = pendingNumber
+                pendingCallResult = null
+                pendingNumber = null
+                if (result == null || number == null) return
+                when {
+                    ok -> result.success(placeCall(number))
+                    shouldShowRequestPermissionRationale(Manifest.permission.CALL_PHONE) -> result.success("denied")
+                    else -> result.success("blocked")
+                }
+            }
+            AUDIO_REQUEST -> {
+                val result = pendingAudioResult ?: return
+                pendingAudioResult = null
+                when {
+                    ok -> result.success("granted")
+                    shouldShowRequestPermissionRationale(audioPermission) -> result.success("denied")
+                    else -> result.success("blocked")
+                }
+            }
         }
     }
 
     companion object {
         private const val CALL_REQUEST = 4711
+        private const val AUDIO_REQUEST = 4712
     }
 }
 ''';

@@ -6,6 +6,7 @@ import '../../app/refresh.dart';
 import '../../app/theme.dart';
 import '../../core/auth/session.dart';
 import '../../core/notifications/notification_service.dart';
+import '../../core/recordings/recording_service.dart';
 import '../../core/updates/update_service.dart';
 import '../activities/activity_form.dart';
 import '../activities/activity_list_screen.dart';
@@ -35,6 +36,22 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       final pending = notifications.takePendingRoute();
       if (pending != null) navigatorKey.currentState?.pushNamed(pending);
       _checkForUpdate();
+      _syncRecordings(ask: true);
+    });
+  }
+
+  /// After a call the user comes back to the app: find and upload that call's recording.
+  /// The phone may need a few seconds to finish saving it, so look again shortly after.
+  Future<void> _syncRecordings({bool ask = false}) async {
+    final session = context.read<SessionController>();
+    final p = session.profile;
+    if (p == null) return;
+    final rec = RecordingService.instance;
+    await rec.bind(p.user, enabled: p.can('call_recordings'));
+    if (!rec.enabled) return;
+    await rec.sync(session.repo, askPermission: ask);
+    Future<void>.delayed(const Duration(seconds: 12), () {
+      if (mounted) rec.sync(session.repo);
     });
   }
 
@@ -51,6 +68,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       context.read<SessionController>().refreshProfile(); // picks up role changes (FR-005)
       bumpRefresh();
       _checkForUpdate();
+      _syncRecordings(ask: true);
     }
   }
 

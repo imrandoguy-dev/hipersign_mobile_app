@@ -90,6 +90,36 @@ class ApiClient {
     return _handle(r);
   }
 
+  /// Multipart upload (e.g. a call recording). Safe to retry when [fields] carry a client key.
+  Future<dynamic> upload(String method, Map<String, dynamic> fields, String filePath, {String field = 'file'}) async {
+    final r = await _wrap(() async {
+      final req = http.MultipartRequest('POST', _uri(method))..headers.addAll(_headers());
+      fields.forEach((k, v) {
+        if (v != null) req.fields[k] = v.toString();
+      });
+      req.files.add(await http.MultipartFile.fromPath(field, filePath));
+      final streamed = await _http.send(req).timeout(const Duration(minutes: 3));
+      return http.Response.fromStream(streamed).timeout(const Duration(minutes: 3));
+    });
+    return _handle(r);
+  }
+
+  /// Downloads a file endpoint (not the JSON envelope) to [path].
+  Future<File> downloadTo(String method, Map<String, dynamic> params, String path) async {
+    final r = await _wrap(() => _http.get(_uri(method, params), headers: _headers()).timeout(const Duration(minutes: 2)));
+    final type = r.headers['content-type'] ?? '';
+    if (r.statusCode == 200 && !type.contains('json')) {
+      final f = File(path);
+      await f.writeAsBytes(r.bodyBytes, flush: true);
+      return f;
+    }
+    if (r.statusCode == 404) throw ApiException('NOT_FOUND', 'This recording is no longer available.', 404);
+    if (r.statusCode == 403 || r.statusCode == 401) {
+      throw ApiException('FORBIDDEN', 'You cannot play this recording.', r.statusCode);
+    }
+    throw ApiException('SERVER_ERROR', 'Could not download the recording (${r.statusCode}).', r.statusCode);
+  }
+
   Future<http.Response> _wrap(Future<http.Response> Function() call) async {
     try {
       return await call();

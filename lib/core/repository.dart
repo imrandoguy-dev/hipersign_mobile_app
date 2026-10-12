@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:intl/intl.dart';
 
 import '../shared/models/models.dart';
@@ -229,6 +231,37 @@ class Repository {
   Future<Booking> completeBooking(String id, String? notes) async {
     final data = await api.post('trials.complete_booking', {'booking_id': id, 'completion_notes': notes});
     return Booking.fromJson(Map<String, dynamic>.from((data as Map)['booking'] as Map));
+  }
+
+  // ------------------------------------------------------------ call recordings
+
+  Future<PageResult<CallRecording>> recordings({String? partyDoctype, String? party, String? cursor}) async {
+    final data = Map<String, dynamic>.from(await api.get('recordings.get_list', {
+      'party_doctype': partyDoctype,
+      'party': party,
+      'cursor': cursor,
+      'page_size': 30,
+    }) as Map);
+    return PageResult(
+      ((data['items'] as List?) ?? const []).map((e) => CallRecording.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+      data['next_cursor']?.toString(),
+    );
+  }
+
+  Future<CallRecording> uploadRecording(Map<String, dynamic> fields, String filePath) async {
+    final data = await api.upload('recordings.upload', fields, filePath);
+    return CallRecording.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  Future<void> deleteRecording(String id) => api.post('recordings.delete', {'name': id});
+
+  /// Downloads (once) to the cache and returns the local file path for playback.
+  Future<String> recordingFile(CallRecording r) async {
+    final path = '${Directory.systemTemp.path}/hm-rec-${r.id}.${r.ext ?? 'm4a'}';
+    final f = File(path);
+    if (await f.exists() && await f.length() > 0) return path;
+    await api.downloadTo('recordings.download', {'name': r.id}, path);
+    return path;
   }
 
   // ------------------------------------------------------------ notifications

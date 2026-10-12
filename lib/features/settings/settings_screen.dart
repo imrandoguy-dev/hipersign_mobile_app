@@ -10,6 +10,7 @@ import '../../core/auth/session.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/notifications/reminder_planner.dart';
 import '../../core/updates/update_service.dart';
+import '../recordings/recordings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -173,6 +174,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ]),
           ),
         ]),
+        if (Platform.isAndroid && (session.profile?.can('call_recordings') ?? false)) ...[
+          const _Header('Call recordings'),
+          _Card(children: [
+            ListTile(
+              leading: const Icon(Icons.graphic_eq),
+              title: const Text('My call recordings'),
+              subtitle: const Text('Calls made from Hipersign, saved to the customer in ERP'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecordingsScreen())),
+            ),
+            ListTile(
+              leading: const Icon(Icons.help_outline),
+              title: const Text('How to set up call recording'),
+              onTap: () => showRecordingHelp(context),
+            ),
+          ]),
+        ],
         if (Platform.isAndroid) ...[
           const _Header('If notifications arrive late'),
           const _Card(children: [

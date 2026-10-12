@@ -4,10 +4,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/nav.dart';
 import '../../app/theme.dart';
 import '../../core/phone/direct_call.dart';
+import '../../core/recordings/recording_service.dart';
 import '../models/models.dart';
 
 /// Calls the number directly (Android) or opens the dialer. Never marks anything as done (FR-034).
-Future<void> callPhone(PhoneInfo? phone, {void Function()? onLaunched}) async {
+///
+/// [party] / [activityId] tell the call recorder which customer (and activity) the
+/// phone's recording of this call belongs to.
+Future<void> callPhone(PhoneInfo? phone, {void Function()? onLaunched, Party? party, String? activityId}) async {
   if (phone == null) {
     showSnack('No phone number saved for this contact.', error: true);
     return;
@@ -17,6 +21,13 @@ Future<void> callPhone(PhoneInfo? phone, {void Function()? onLaunched}) async {
     return;
   }
   final number = phone.e164 ?? phone.telUrl!.replaceFirst('tel:', '');
+  await RecordingService.instance.noteCall(
+    number: number,
+    partyDoctype: party?.doctype,
+    party: party?.id,
+    partyName: party?.name,
+    activity: activityId,
+  );
   if (await placeCall(number)) onLaunched?.call();
 }
 
@@ -39,9 +50,19 @@ Future<void> openWhatsApp(PhoneInfo? phone, {void Function()? onLaunched}) async
 }
 
 class ContactButtons extends StatelessWidget {
-  const ContactButtons({super.key, required this.phone, this.onCall, this.onWhatsApp, this.dark = false});
+  const ContactButtons({
+    super.key,
+    required this.phone,
+    this.onCall,
+    this.onWhatsApp,
+    this.dark = false,
+    this.party,
+    this.activityId,
+  });
 
   final PhoneInfo? phone;
+  final Party? party; // links the call recording to this customer / lead
+  final String? activityId;
   final VoidCallback? onCall;
   final VoidCallback? onWhatsApp;
   final bool dark; // true when drawn on a pastel card
@@ -65,7 +86,7 @@ class ContactButtons extends StatelessWidget {
         icon: Icons.call,
         color: disabled ? fg.withValues(alpha: 0.35) : fg,
         background: bg,
-        onTap: () => callPhone(phone, onLaunched: onCall),
+        onTap: () => callPhone(phone, onLaunched: onCall, party: party, activityId: activityId),
       ),
     ]);
   }

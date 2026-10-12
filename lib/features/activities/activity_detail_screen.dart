@@ -301,6 +301,8 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
               ),
               ContactButtons(
                 phone: phone,
+                party: a.party,
+                activityId: a.id,
                 onCall: () => repo.logContact(a.id, 'Call').catchError((_) {}),
                 onWhatsApp: () => repo.logContact(a.id, 'WhatsApp').catchError((_) {}),
               ),
