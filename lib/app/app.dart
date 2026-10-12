@@ -47,6 +47,8 @@ class _Root extends StatelessWidget {
       SessionStatus.restoring => const Scaffold(
           body: Center(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Image(image: AssetImage('assets/branding/logo.png'), width: 96, height: 96),
+              SizedBox(height: 16),
               Text('Hipersign', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: HsColors.accent)),
               SizedBox(height: 24),
               CircularProgressIndicator(),

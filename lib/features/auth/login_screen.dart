@@ -86,6 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
               child: AutofillGroup(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   const SizedBox(height: 24),
+                  const Image(image: AssetImage('assets/branding/logo.png'), width: 72, height: 72, alignment: Alignment.centerLeft),
+                  const SizedBox(height: 16),
                   const Text('Hipersign',
                       style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: HsColors.accent)),
                   const SizedBox(height: 6),

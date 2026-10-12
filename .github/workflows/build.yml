@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write  # to publish the APK as a release
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -31,6 +34,16 @@ jobs:
           name: hipersign-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
+      - name: Publish installable APK (Releases -> "Latest pilot build")
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk Hipersign.apk
+          gh release delete pilot --yes --cleanup-tag || true
+          gh release create pilot Hipersign.apk --prerelease \
+            --title "Latest pilot build" \
+            --notes "Built from ${GITHUB_SHA::7}. On an Android phone, tap Hipersign.apk to download and install."
 
   ios:
     runs-on: macos-latest

@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 flutter create --org com.hipersign --project-name hipersign_mobile_app --platforms android,ios .
 dart run tool/patch_platforms.dart
 flutter pub get
+dart run flutter_launcher_icons
 
 echo
 echo "Next: run 'flutterfire configure' to connect Firebase (push notifications)."
