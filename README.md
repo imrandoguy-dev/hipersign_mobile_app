@@ -1,5 +1,40 @@
 # Hipersign — mobile app (Flutter)
 
+<p align="center">
+  <img src="assets/branding/logo.png" width="96" alt="Hipersign logo"><br>
+  <b>Your ERP sales team, on the phone.</b>
+</p>
+
+## 📲 Download for Android
+
+<p align="center">
+  <a href="https://github.com/imrandoguy-dev/hipersign_mobile_app/releases/download/pilot/Hipersign.apk">
+    <img src="https://img.shields.io/badge/Download-Hipersign%20for%20Android-0A3C6E?style=for-the-badge&logo=android&logoColor=white" alt="Download Hipersign for Android" height="56">
+  </a>
+</p>
+
+<p align="center">
+  <img src="assets/branding/download-qr.png" width="180" alt="Scan to download Hipersign"><br>
+  <sub>Scan with your phone's camera to download</sub>
+</p>
+
+**How to install**
+
+1. On your Android phone, tap **Download** above (or scan the QR code).
+2. Open the downloaded **Hipersign.apk** and tap **Install**.
+   First time only: Android asks to allow installs from your browser / Files app —
+   tap **Settings → Allow from this source**, go back and tap **Install**.
+3. Open Hipersign, enter your company's ERP address (for example
+   `https://yourcompany.hipersignerp.cloud`) and sign in with your ERP username and password.
+4. Allow the permissions it asks for (notifications, phone & call log, music & audio), and in
+   **More → Settings → Caller pop-up** allow **Display over other apps**.
+
+Updates install from inside the app (**More → Settings → Check for updates**) — no need to
+come back here. All versions: [Releases](https://github.com/imrandoguy-dev/hipersign_mobile_app/releases).
+iPhone: not yet available (needs an Apple developer account / TestFlight).
+
+---
+
 Role-based employee app for Android and iOS, connected to ERPNext through the
 [`hipersign_mobile`](../hipersign_mobile) Frappe app. The first workspace is **Sales**:
 

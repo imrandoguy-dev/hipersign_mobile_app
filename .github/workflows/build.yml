@@ -63,9 +63,20 @@ jobs:
             "$BUILD" "$BUILD" "${GITHUB_SHA::7}" "$MSG" > version.json
           cat version.json
           gh release delete pilot --yes --cleanup-tag || true
-          gh release create pilot Hipersign.apk version.json --prerelease \
-            --title "Latest pilot build (0.1.$BUILD)" \
-            --notes "Built from ${GITHUB_SHA::7}. On an Android phone, tap Hipersign.apk to download and install."
+          cat > notes.md <<EOF
+          ## Download Hipersign for Android (version 0.1.$BUILD)
+
+          **On your Android phone, tap \`Hipersign.apk\` below** to download it, then open the downloaded file and tap **Install**.
+
+          - First time only: Android asks to allow installing from your browser or Files app - tap **Settings > Allow from this source**, then go back and tap **Install**.
+          - Already have Hipersign? You don't need this page - the app updates itself (More > Settings > Check for updates).
+          - Sign in with your company's ERP address (e.g. \`https://yourcompany.hipersignerp.cloud\`) and your ERP username and password.
+
+          Changes: $(git log -1 --pretty=%s | head -c 300)
+          EOF
+          gh release create pilot Hipersign.apk version.json --latest \
+            --title "Hipersign for Android - 0.1.$BUILD" \
+            --notes-file notes.md
 
   ios:
     runs-on: macos-latest
