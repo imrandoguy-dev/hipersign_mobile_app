@@ -12,6 +12,7 @@ import '../../app/nav.dart';
 import '../../shared/models/models.dart';
 import '../api/api_client.dart';
 import '../cache/cache_store.dart';
+import 'firebase_options.dart';
 
 const appVersion = '0.1.0';
 const _channelId = 'hipersign_alerts';
@@ -81,7 +82,7 @@ class NotificationService {
     }
 
     try {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp(options: hipersignFirebaseOptions);
       firebaseReady = true;
     } catch (_) {
       firebaseReady = false; // google-services.json / GoogleService-Info.plist not configured
