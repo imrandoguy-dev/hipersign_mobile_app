@@ -24,7 +24,14 @@ jobs:
       - name: Generate native projects and apply Hipersign settings
         run: bash tool/setup_platforms.sh
       - name: Analyze
-        run: flutter analyze --no-fatal-infos
+        run: |
+          set +e
+          flutter analyze --no-fatal-infos > analyze.txt 2>&1
+          code=$?
+          cat analyze.txt
+          # Surface problems as annotations (readable from the run page / API).
+          grep -E "^ *(error|warning) " analyze.txt | head -30 | while IFS= read -r line; do echo "::error::$line"; done
+          exit $code
       - name: Unit and widget tests
         run: flutter test
       - name: Unlock release signing key
@@ -90,4 +97,10 @@ jobs:
       - name: Generate native projects and apply Hipersign settings
         run: bash tool/setup_platforms.sh
       - name: Build iOS (compile check, unsigned)
-        run: flutter build ios --release --no-codesign
+        run: |
+          set +e
+          flutter build ios --release --no-codesign > build.txt 2>&1
+          code=$?
+          tail -200 build.txt
+          grep -E "Error: |error: " build.txt | head -20 | while IFS= read -r line; do echo "::error::$line"; done
+          exit $code
