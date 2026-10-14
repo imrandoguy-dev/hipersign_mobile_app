@@ -43,6 +43,7 @@ class CallEntry {
   static const failed = 'failed';
   static const notFound = 'not_found';
   static const notConnected = 'not_connected'; // cancelled / unanswered: there is no recording
+  static const otherSim = 'other_sim'; // made on a SIM that isn't a work SIM: never uploaded
 
   final String id; // also the upload's client key (retries never duplicate)
   final String number;
@@ -78,6 +79,7 @@ class CallEntry {
         failed => error ?? 'Upload failed - will try again',
         notFound => 'No recording found',
         notConnected => 'Not connected - no recording',
+        otherSim => 'Personal SIM - not saved',
         _ => status,
       };
 
@@ -236,7 +238,8 @@ class RecordingService extends ChangeNotifier {
   /// Calls whose recording is not in ERP yet (newest first).
   List<CallEntry> get pending =>
       _entries
-          .where((e) => e.status != CallEntry.uploaded && e.status != CallEntry.notConnected)
+          .where((e) =>
+              e.status != CallEntry.uploaded && e.status != CallEntry.notConnected && e.status != CallEntry.otherSim)
           .toList()
         ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
 
@@ -431,7 +434,7 @@ class RecordingService extends ChangeNotifier {
 
     // A connected call from a number we don't recognise may be a customer / lead added in
     // ERPNext since the last refresh: refresh the numbers now (at most every 10 minutes).
-    if (rows.any((r) => connectedWorkCandidate(r) && partyOf(r) == null) &&
+    if (rows.any((r) => connectedWorkCandidate(r) && isWorkSimRow(r) && partyOf(r) == null) &&
         now.difference(_directoryRefreshedAt) > const Duration(minutes: 10)) {
       _directoryRefreshedAt = now;
       try {
@@ -460,7 +463,11 @@ class RecordingService extends ChangeNotifier {
           ..logChecked = true
           ..callAt = DateTime.fromMillisecondsSinceEpoch((best['date'] as num).toInt())
           ..callSeconds = (best['duration'] as num?)?.toInt() ?? 0;
-        if ((e.callSeconds ?? 0) == 0) e.status = CallEntry.notConnected;
+        if (!isWorkSimRow(best)) {
+          e.status = CallEntry.otherSim; // Settings > Work SIM: personal calls are not recorded
+        } else if ((e.callSeconds ?? 0) == 0) {
+          e.status = CallEntry.notConnected;
+        }
       } else if (now.difference(e.startedAt) > const Duration(minutes: 10)) {
         // Not in the call history at all: the call was cancelled before it was placed.
         e
@@ -471,7 +478,7 @@ class RecordingService extends ChangeNotifier {
 
     // 2) connected work calls made outside Hipersign (incoming, or from the Phone app)
     for (final r in rows!) {
-      if (!connectedWorkCandidate(r)) continue;
+      if (!connectedWorkCandidate(r) || !isWorkSimRow(r)) continue;
       final party = partyOf(r);
       if (party == null) continue; // not an ERPNext number: personal call
       final date = (r['date'] as num).toInt();

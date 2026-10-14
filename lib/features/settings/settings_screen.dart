@@ -180,6 +180,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const _Header('Caller pop-up'),
           const _CallerIdCard(),
         ],
+        if (Platform.isAndroid && (session.profile?.can('customers') ?? false)) ...[
+          const _Header('Work SIM'),
+          const _WorkSimCard(),
+        ],
         if (Platform.isAndroid && (session.profile?.can('call_recordings') ?? false)) ...[
           const _Header('Call recordings'),
           _Card(children: [
@@ -301,6 +305,129 @@ class _VersionTileState extends State<_VersionTile> {
 }
 
 /// Caller pop-up: shows the ERPNext customer / lead / deal over the call screen.
+class _WorkSimCard extends StatefulWidget {
+  const _WorkSimCard();
+
+  @override
+  State<_WorkSimCard> createState() => _WorkSimCardState();
+}
+
+class _WorkSimCardState extends State<_WorkSimCard> with WidgetsBindingObserver {
+  SimSetup? _setup;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refresh(); // back from phone settings
+  }
+
+  Future<void> _refresh() async {
+    final s = await simSetup();
+    if (mounted) {
+      setState(() {
+        _setup = s;
+        _loaded = true;
+      });
+    }
+  }
+
+  Future<void> _toggle(String id, bool on) async {
+    final selected = {...?_setup?.selected};
+    on ? selected.add(id) : selected.remove(id);
+    await setWorkSims(selected);
+    await _refresh();
+  }
+
+  static const _note = TextStyle(fontSize: 12.5, color: HsColors.textSecondary, height: 1.4);
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _setup;
+    if (!_loaded) return const _Card(children: [ListTile(title: Text('Checking...'))]);
+    if (s == null) return const _Card(children: [ListTile(title: Text('Not available on this phone'))]);
+    final sims = s.sims;
+    if (sims == null) {
+      return _Card(children: [
+        ListTile(
+          leading: const Icon(Icons.sim_card_outlined, color: HsColors.warning),
+          title: const Text('Choose your work SIM'),
+          subtitle: const Text('Allow phone access so Hipersign can see the SIMs in this phone'),
+          trailing: TextButton(
+            onPressed: () async {
+              final r = await requestCallerIdPermissions();
+              if (r != null && !r.phone) {
+                showSnack('Allow "Phone" and "Call logs" for Hipersign in phone settings.', error: true);
+                await openAppSettings();
+              }
+              _refresh();
+            },
+            child: const Text('Allow'),
+          ),
+        ),
+      ]);
+    }
+    if (sims.length <= 1) {
+      return _Card(children: [
+        ListTile(
+          leading: const Icon(Icons.sim_card_outlined),
+          title: Text(sims.isEmpty ? 'No SIM found' : sims.first.title),
+          subtitle: const Text('Only one SIM in this phone - its calls to customers, leads and deals count as work calls.'),
+        ),
+      ]);
+    }
+    // A chosen SIM that is no longer in the phone (SIM swapped).
+    final missing = s.selected.where((id) => !sims.any((x) => x.id == id)).toList();
+    final chosen = sims.where((x) => s.selected.contains(x.id)).toList();
+    return _Card(children: [
+      for (final sim in sims)
+        CheckboxListTile(
+          secondary: const Icon(Icons.sim_card_outlined),
+          title: Text(sim.title),
+          subtitle: Text(s.selected.contains(sim.id) ? 'Work SIM' : (s.selected.isEmpty ? 'Counted (no work SIM chosen)' : 'Personal - ignored')),
+          value: s.selected.contains(sim.id),
+          onChanged: (v) => _toggle(sim.id, v ?? false),
+        ),
+      if (missing.isNotEmpty)
+        ListTile(
+          leading: const Icon(Icons.warning_amber_rounded, color: HsColors.warning),
+          title: const Text('A chosen work SIM is not in this phone'),
+          subtitle: const Text('Tick the SIM you use for work now.'),
+          trailing: TextButton(
+            onPressed: () async {
+              await setWorkSims(s.selected.where((id) => !missing.contains(id)));
+              _refresh();
+            },
+            child: const Text('Clear'),
+          ),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+        child: Text(
+          s.selected.isEmpty
+              ? 'No work SIM chosen: calls on every SIM are recorded, uploaded and counted. Tick your work SIM to keep personal calls out.'
+              : 'Only calls on the ticked SIM${chosen.length == 1 ? '' : 's'} are recorded, uploaded, counted in reports and '
+                  'get the after-call screen. Calls on other SIMs stay on the phone.'
+                  '${chosen.length == 1 ? ' Calls you place from Hipersign go out on ${chosen.first.title.split(' - ').first}.' : ''}',
+          style: _note,
+        ),
+      ),
+    ]);
+  }
+}
+
 class _CallerIdCard extends StatefulWidget {
   const _CallerIdCard();
 

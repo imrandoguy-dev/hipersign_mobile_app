@@ -203,3 +203,49 @@ Future<List<Map<String, dynamic>>?> readPhoneCallLog(DateTime since) async {
   final rows = await _channel.invokeMethod<List<dynamic>>('readCallLog', {'since': since.millisecondsSinceEpoch});
   return rows?.whereType<Map>().map((m) => m.map((k, v) => MapEntry(k.toString(), v))).toList();
 }
+
+/// False when the row was on a SIM that is not chosen as a work SIM (personal call).
+bool isWorkSimRow(Map<String, dynamic> row) => row['work'] != false;
+
+// ------------------------------------------------------------ work SIM (Android)
+
+class SimCard {
+  SimCard(Map m)
+      : id = m['id']?.toString() ?? '',
+        label = m['label']?.toString() ?? 'SIM',
+        carrier = m['carrier']?.toString(),
+        slot = (m['slot'] as num?)?.toInt() ?? 1;
+
+  final String id;
+  final String label;
+  final String? carrier;
+  final int slot;
+
+  String get title {
+    final name = carrier != null && carrier!.isNotEmpty && carrier != label ? '$label ($carrier)' : label;
+    return 'SIM $slot - $name';
+  }
+}
+
+class SimSetup {
+  SimSetup({required this.sims, required this.selected});
+
+  /// Null when the Phone permission is not given yet.
+  final List<SimCard>? sims;
+
+  /// IDs of the work SIMs. Empty = every SIM counts as work.
+  final Set<String> selected;
+}
+
+Future<SimSetup?> simSetup() async {
+  final m = await _take<Map<dynamic, dynamic>>('listSims');
+  if (m == null) return null;
+  final sims = m['sims'] is List ? (m['sims'] as List).whereType<Map>().map(SimCard.new).toList() : null;
+  final selected = m['selected'] is List ? (m['selected'] as List).map((e) => e.toString()).toSet() : <String>{};
+  return SimSetup(sims: sims, selected: selected);
+}
+
+Future<void> setWorkSims(Iterable<String> ids) async {
+  if (!Platform.isAndroid) return;
+  await _channel.invokeMethod<bool>('setWorkSims', {'ids': ids.toList()});
+}

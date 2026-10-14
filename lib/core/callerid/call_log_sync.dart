@@ -47,6 +47,7 @@ Future<void> syncCallLog(Repository repo, String user, {bool force = false}) asy
     final date = (r['date'] as num).toInt();
     final key = '${r['id']}-$date';
     if (sent.contains(key)) continue;
+    if (!isWorkSimRow(r)) continue; // a personal SIM (Settings > Work SIM)
     final direction = switch ((r['type'] as num?)?.toInt()) {
       2 => 'outgoing',
       1 || 7 => 'incoming',

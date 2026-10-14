@@ -315,7 +315,7 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('takeAfterCallIntent')) return;
+  if (current.contains('setWorkSims')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
@@ -335,6 +335,7 @@ import android.os.Bundle
 import android.provider.CallLog
 import android.provider.MediaStore
 import android.provider.Settings
+import android.telecom.TelecomManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -399,6 +400,16 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "callerIdStatus" -> result.success(callerIdStatus())
+                "listSims" -> result.success(
+                    mapOf(
+                        "sims" to CallerId.simAccounts(applicationContext),
+                        "selected" to CallerId.workSims(applicationContext).toList(),
+                    )
+                )
+                "setWorkSims" -> {
+                    CallerId.setWorkSims(applicationContext, call.argument<List<String>>("ids") ?: emptyList())
+                    result.success(true)
+                }
                 "readCallLog" -> {
                     val since = call.argument<Number>("since")?.toLong() ?: 0L
                     if (!granted(Manifest.permission.READ_CALL_LOG)) {
@@ -599,7 +610,9 @@ class MainActivity : FlutterActivity() {
         val out = ArrayList<Map<String, Any?>>()
         val columns = arrayOf(
             CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.TYPE,
+            CallLog.Calls.PHONE_ACCOUNT_ID,
         )
+        val work = CallerId.workAliases(applicationContext)
         contentResolver.query(
             CallLog.Calls.CONTENT_URI, columns, "${CallLog.Calls.DATE} > ?", arrayOf(since.toString()),
             "${CallLog.Calls.DATE} ASC",
@@ -615,6 +628,8 @@ class MainActivity : FlutterActivity() {
                         "duration" to c.getLong(3),
                         "type" to c.getInt(4),
                         "party" to known?.let { listOf(it.optString(2), it.optString(3), it.optString(0)) },
+                        "sim" to c.getString(5),
+                        "work" to CallerId.isWorkSim(c.getString(5), work),
                     )
                 )
             }
@@ -624,7 +639,10 @@ class MainActivity : FlutterActivity() {
 
     private fun placeCall(number: String): String = try {
         CallerId.noteAppCall(applicationContext, number)
-        startActivity(Intent(Intent.ACTION_CALL, Uri.fromParts("tel", number, null)))
+        val intent = Intent(Intent.ACTION_CALL, Uri.fromParts("tel", number, null))
+        // One work SIM chosen in Settings: calls from Hipersign always go out on it.
+        CallerId.workCallHandle(applicationContext)?.let { intent.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, it) }
+        startActivity(intent)
         "called"
     } catch (e: Exception) {
         "failed"
@@ -746,8 +764,12 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.content.pm.PackageManager
+import android.annotation.SuppressLint
 import android.provider.CallLog
 import android.provider.Settings
+import android.telecom.PhoneAccountHandle
+import android.telecom.TelecomManager
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.util.TypedValue
 import android.view.Gravity
@@ -806,6 +828,79 @@ object CallerId {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("after_call", enabled).apply()
     }
 
+    // ---- Work SIM: only calls on the chosen SIM(s) are recorded, uploaded and logged.
+
+    fun workSims(context: Context): Set<String> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet("work_sims", null)?.toSet() ?: emptySet()
+
+    fun setWorkSims(context: Context, ids: List<String>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet("work_sims", ids.toSet()).apply()
+    }
+
+    private fun hasPhoneState(context: Context) =
+        context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+
+    /** The phone's SIMs that can make calls; null without the Phone permission. */
+    @SuppressLint("MissingPermission", "HardwareIds")
+    fun simAccounts(context: Context): List<Map<String, Any?>>? {
+        if (!hasPhoneState(context)) return null
+        return try {
+            val telecom = context.getSystemService(TelecomManager::class.java) ?: return emptyList()
+            val tm = context.getSystemService(TelephonyManager::class.java)
+            val subs = try {
+                context.getSystemService(SubscriptionManager::class.java)?.activeSubscriptionInfoList
+            } catch (e: Exception) {
+                null
+            } ?: emptyList()
+            telecom.callCapablePhoneAccounts.mapIndexed { i, h ->
+                val account = try { telecom.getPhoneAccount(h) } catch (e: Exception) { null }
+                var subId = -1
+                if (Build.VERSION.SDK_INT >= 30) subId = try { tm?.getSubscriptionId(h) ?: -1 } catch (e: Exception) { -1 }
+                val sub = subs.firstOrNull { it.subscriptionId == subId }
+                    ?: subs.firstOrNull { s -> try { s.iccId == h.id } catch (e: Exception) { false } }
+                    ?: subs.firstOrNull { it.subscriptionId.toString() == h.id }
+                mapOf(
+                    "id" to h.id,
+                    "label" to (account?.label?.toString()?.takeIf { it.isNotBlank() }
+                        ?: sub?.displayName?.toString() ?: "SIM ${i + 1}"),
+                    "carrier" to sub?.carrierName?.toString(),
+                    "slot" to ((sub?.simSlotIndex ?: i) + 1),
+                    "sub_id" to (sub?.subscriptionId ?: subId).takeIf { it >= 0 }?.toString(),
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** IDs the call history may use for the work SIM(s); null = no SIM chosen (all calls count). */
+    fun workAliases(context: Context): Set<String>? {
+        val chosen = workSims(context)
+        if (chosen.isEmpty()) return null
+        val out = HashSet(chosen)
+        simAccounts(context)?.forEach { s ->
+            val id = s["id"] as? String
+            val subId = s["sub_id"] as? String
+            if (id != null && subId != null && chosen.contains(id)) out.add(subId)
+        }
+        return out
+    }
+
+    fun isWorkSim(accountId: String?, aliases: Set<String>?): Boolean =
+        aliases == null || accountId.isNullOrBlank() || accountId in aliases
+
+    /** The SIM to place Hipersign calls on, when exactly one work SIM is chosen. */
+    @SuppressLint("MissingPermission")
+    fun workCallHandle(context: Context): PhoneAccountHandle? {
+        val chosen = workSims(context)
+        if (chosen.size != 1 || !hasPhoneState(context)) return null
+        return try {
+            context.getSystemService(TelecomManager::class.java)?.callCapablePhoneAccounts?.firstOrNull { it.id in chosen }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /** Hipersign placed a call: remember it so its end opens the after-call screen. */
     fun noteAppCall(context: Context, number: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -825,7 +920,10 @@ object CallerId {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val cursor = context.contentResolver.query(
             CallLog.Calls.CONTENT_URI,
-            arrayOf(CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.TYPE),
+            arrayOf(
+                CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.TYPE,
+                CallLog.Calls.PHONE_ACCOUNT_ID,
+            ),
             null, null, "${CallLog.Calls.DATE} DESC",
         ) ?: return
         cursor.use { c ->
@@ -839,6 +937,7 @@ object CallerId {
             if (System.currentTimeMillis() - (date + duration * 1000L) > 3 * 60 * 1000L) return
             if (prefs.getLong("last_after_call_id", -1L) == id) return
             prefs.edit().putLong("last_after_call_id", id).apply()
+            if (!isWorkSim(c.getString(5), workAliases(context))) return // personal SIM
             val direction = when (type) {
                 CallLog.Calls.INCOMING_TYPE -> "incoming"
                 CallLog.Calls.OUTGOING_TYPE -> "outgoing"
