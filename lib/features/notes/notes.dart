@@ -60,9 +60,9 @@ class _NoteEditorState extends State<_NoteEditor> {
     final repo = context.read<SessionController>().repo;
     try {
       if (widget.note == null) {
-        await repo.addNote(widget.doctype, widget.name, text);
+        await repo.addPartyNote(widget.doctype, widget.name, text);
       } else {
-        await repo.updateNote(widget.note!.id, text);
+        await repo.updatePartyNote(widget.note!.id, text);
       }
       if (mounted) Navigator.pop(context, true);
       showSnack('Note saved');
@@ -91,7 +91,7 @@ class _NoteEditorState extends State<_NoteEditor> {
     if (ok != true || !mounted) return;
     final repo = context.read<SessionController>().repo;
     try {
-      await repo.deleteNote(widget.note!.id);
+      await repo.deletePartyNote(widget.note!.id);
       if (mounted) Navigator.pop(context, true);
       showSnack('Note deleted');
     } on ApiException catch (e) {
@@ -243,7 +243,7 @@ class _NotesScreenState extends State<NotesScreen> {
 
   Future<void> _load() async {
     try {
-      final n = await context.read<SessionController>().repo.notes(widget.doctype, widget.name);
+      final n = await context.read<SessionController>().repo.partyNotes(widget.doctype, widget.name);
       if (mounted) {
         setState(() {
           _notes = n;

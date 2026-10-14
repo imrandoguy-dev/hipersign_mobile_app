@@ -71,7 +71,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
 
   Future<void> _loadNotes() async {
     try {
-      final n = await context.read<SessionController>().repo.notes(widget.doctype, widget.name);
+      final n = await context.read<SessionController>().repo.partyNotes(widget.doctype, widget.name);
       if (mounted) setState(() => _notes = n);
     } on ApiException {
       // Notes are extra; the page still works without them (e.g. older server).

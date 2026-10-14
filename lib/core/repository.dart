@@ -269,20 +269,20 @@ class Repository {
 
   // ------------------------------------------------------------ notes
 
-  Future<List<Note>> notes(String doctype, String name) async {
+  Future<List<Note>> partyNotes(String doctype, String name) async {
     final data = Map<String, dynamic>.from(await api.get('notes.get_list', {'doctype': doctype, 'name': name}) as Map);
     return ((data['items'] as List?) ?? const [])
         .map((e) => Note.fromJson(Map<String, dynamic>.from(e as Map), partyDoctype: doctype))
         .toList();
   }
 
-  Future<Note> addNote(String doctype, String name, String text) async => Note.fromJson(
+  Future<Note> addPartyNote(String doctype, String name, String text) async => Note.fromJson(
       Map<String, dynamic>.from(await api.post('notes.add', {'doctype': doctype, 'name': name, 'text': text}) as Map));
 
-  Future<Note> updateNote(String id, String text) async =>
+  Future<Note> updatePartyNote(String id, String text) async =>
       Note.fromJson(Map<String, dynamic>.from(await api.post('notes.update', {'id': id, 'text': text}) as Map));
 
-  Future<void> deleteNote(String id) => api.post('notes.delete', {'id': id});
+  Future<void> deletePartyNote(String id) => api.post('notes.delete', {'id': id});
 
   // ------------------------------------------------------------ call recordings
 
