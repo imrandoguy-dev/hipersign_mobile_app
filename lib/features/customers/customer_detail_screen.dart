@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../app/nav.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../core/recordings/recording_service.dart';
+import '../../shared/maps/maps_links.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/activity_card.dart';
 import '../../shared/widgets/common.dart';
@@ -215,6 +217,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           ContactButtons(phone: ph, party: p),
                         ]),
                       ),
+                    ..._locationRows(p),
                   ]),
                 ),
                 Padding(
@@ -270,6 +273,50 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
               ]),
             ),
     );
+  }
+
+  Future<void> _openMaps(Uri uri) async {
+    if (!await MapsLinks.open(uri)) showSnack('Could not open Google Maps', error: true);
+  }
+
+  /// Address with Directions (Google Maps) and the Google Business profile.
+  List<Widget> _locationRows(Party p) {
+    final links = MapsLinks(p.name, p.location);
+    final address = p.location?.address;
+    return [
+      const Padding(padding: EdgeInsets.only(top: 14), child: Divider(height: 1)),
+      InkWell(
+        onTap: links.hasLocation ? () => _openMaps(links.pin()) : null,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.location_on_outlined, size: 20, color: HsColors.textSecondary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                address ?? (links.hasLocation ? 'Location on Google Maps' : 'No address in ERP'),
+                style: TextStyle(color: address == null ? HsColors.textSecondary : null, height: 1.35),
+              ),
+            ),
+          ]),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Wrap(spacing: 8, runSpacing: 8, children: [
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.directions_outlined, size: 18),
+            label: const Text('Directions'),
+            onPressed: () => _openMaps(links.directions()),
+          ),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.storefront_outlined, size: 18),
+            label: const Text('Google Business'),
+            onPressed: () => _openMaps(links.business()),
+          ),
+        ]),
+      ),
+    ];
   }
 
   List<Widget> _recordingSection(Party p) {

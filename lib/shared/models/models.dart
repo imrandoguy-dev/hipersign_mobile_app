@@ -47,6 +47,7 @@ class Party {
     this.status,
     this.phones = const [],
     this.primaryPhone,
+    this.location,
   });
 
   final String kind; // Customer | Lead | Deal
@@ -58,6 +59,7 @@ class Party {
   final String? status;
   final List<PhoneInfo> phones;
   final PhoneInfo? primaryPhone;
+  final PartyLocation? location; // only in the detail response
 
   factory Party.fromJson(Map<String, dynamic> j) => Party(
         kind: j['kind']?.toString() ?? '',
@@ -73,6 +75,22 @@ class Party {
         primaryPhone: j['primary_phone'] is Map
             ? PhoneInfo.fromJson(Map<String, dynamic>.from(j['primary_phone'] as Map))
             : null,
+        location: j['location'] is Map ? PartyLocation.fromJson(Map<String, dynamic>.from(j['location'] as Map)) : null,
+      );
+}
+
+/// Where a customer / lead / deal is: an address and/or its Google Maps business place.
+class PartyLocation {
+  PartyLocation({this.address, this.mapsUrl, this.placeId});
+
+  final String? address;
+  final String? mapsUrl; // the business on Google Maps (from the Google lookup)
+  final String? placeId;
+
+  factory PartyLocation.fromJson(Map<String, dynamic> j) => PartyLocation(
+        address: str(j['address']),
+        mapsUrl: str(j['maps_url']),
+        placeId: str(j['place_id']),
       );
 }
 
