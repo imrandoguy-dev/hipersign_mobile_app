@@ -31,6 +31,12 @@ class _AfterCallScreenState extends State<AfterCallScreen> {
   final List<Timer> _timers = [];
   final DateTime _openedAt = DateTime.now();
 
+  // Automatic WhatsApp message (Hipersign Mobile Settings > WhatsApp Rules).
+  bool _waEnabled = false;
+  bool _waGaveUp = false;
+  List<Map<String, dynamic>> _wa = const [];
+  Timer? _waTimer;
+
   String get _number => widget.call['number']?.toString() ?? '';
   String get _direction => widget.call['direction']?.toString() ?? 'outgoing';
   int get _seconds => (widget.call['duration'] as num?)?.toInt() ?? 0;
@@ -55,7 +61,7 @@ class _AfterCallScreenState extends State<AfterCallScreen> {
     clearAfterCallNotification();
     _rec.addListener(_changed);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _save();
+      _save().then((_) => _pollWhatsApp());
       // The phone may need a few seconds to finish writing the recording file.
       for (final s in [6, 15, 30]) {
         _timers.add(Timer(Duration(seconds: s), _save));
@@ -68,6 +74,7 @@ class _AfterCallScreenState extends State<AfterCallScreen> {
     for (final t in _timers) {
       t.cancel();
     }
+    _waTimer?.cancel();
     _rec.removeListener(_changed);
     super.dispose();
   }
@@ -89,6 +96,77 @@ class _AfterCallScreenState extends State<AfterCallScreen> {
       await syncCallLog(session.repo, p.user, force: true);
     } catch (_) {}
   }
+
+  /// Outgoing calls to a customer / lead / deal may send a WhatsApp template: show what happened.
+  Future<void> _pollWhatsApp() async {
+    final party = _party;
+    if (!mounted || party == null || _direction != 'outgoing') return;
+    final repo = context.read<SessionController>().repo;
+    final since = _openedAt.subtract(Duration(seconds: _seconds + 120));
+    var tries = 0;
+    Future<void> tick() async {
+      tries++;
+      try {
+        final r = await repo.whatsappStatus(party.doctype, party.id, since);
+        final items = ((r['items'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        if (!mounted) return;
+        setState(() {
+          _waEnabled = r['enabled'] == true || items.isNotEmpty;
+          _wa = items;
+        });
+        final done = items.isNotEmpty && items.every((i) => i['status'] != 'queued');
+        if (!_waEnabled || done) return;
+      } catch (_) {
+        if (tries > 3) return; // older server / offline: no WhatsApp line
+      }
+      if (tries >= 20) {
+        if (mounted) setState(() => _waGaveUp = true);
+        return;
+      }
+      _waTimer = Timer(Duration(seconds: tries < 5 ? 3 : 5), tick);
+    }
+
+    await tick();
+  }
+
+  List<Widget> _whatsAppRows() {
+    if (!_waEnabled) return const [];
+    if (_wa.isEmpty) {
+      if (_waGaveUp) return const [];
+      return [_waRow(null, 'Sending WhatsApp message...')];
+    }
+    return [
+      for (final m in _wa)
+        switch (m['status']) {
+          'sent' => _waRow(Icons.check_circle, 'WhatsApp sent${_title(m)}', color: HsColors.completed),
+          'skipped' => _waRow(Icons.info_outline, 'WhatsApp already sent before${_title(m)} - not sent again'),
+          'failed' => _waRow(Icons.error_outline, 'WhatsApp not sent${_title(m)}: ${m['error'] ?? 'error'}',
+              color: HsColors.danger),
+          _ => _waGaveUp
+              ? _waRow(Icons.schedule, 'WhatsApp queued${_title(m)} - will send shortly')
+              : _waRow(null, 'Sending WhatsApp message${_title(m)}...'),
+        },
+    ];
+  }
+
+  String _title(Map<String, dynamic> m) {
+    final t = m['title']?.toString();
+    return t == null || t.isEmpty ? '' : ' · $t';
+  }
+
+  Widget _waRow(IconData? icon, String text, {Color? color}) => Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (icon == null)
+            const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          else
+            Icon(icon, color: color ?? HsColors.textSecondary, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text)),
+          const SizedBox(width: 6),
+          const Icon(Icons.chat_outlined, size: 16, color: Color(0xFF25D366)),
+        ]),
+      );
 
   String _last9(String s) {
     final d = s.replaceAll(RegExp(r'[^0-9]'), '');
@@ -162,6 +240,10 @@ class _AfterCallScreenState extends State<AfterCallScreen> {
                   ),
                 ),
               ]),
+            ],
+            if (_waEnabled) ...[
+              if (!(_connected && recordingsOn)) const Divider(height: 28),
+              ..._whatsAppRows(),
             ],
           ]),
         ),

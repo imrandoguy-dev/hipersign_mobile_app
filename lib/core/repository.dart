@@ -267,6 +267,14 @@ class Repository {
   Future<Map<String, dynamic>> syncCalls(List<Map<String, dynamic>> calls) async =>
       Map<String, dynamic>.from(await api.post('calls.sync', {'calls': calls}) as Map);
 
+  /// Automatic WhatsApp messages for this party since [since]: {enabled, items: [{status, title, error}]}.
+  Future<Map<String, dynamic>> whatsappStatus(String doctype, String name, DateTime since) async =>
+      Map<String, dynamic>.from(await api.get('calls.whatsapp_status', {
+        'doctype': doctype,
+        'name': name,
+        'since': since.toUtc().toIso8601String(),
+      }) as Map);
+
   // ------------------------------------------------------------ notes
 
   Future<List<Note>> partyNotes(String doctype, String name) async {
