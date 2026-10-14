@@ -420,3 +420,37 @@ class SharedPlace {
         error: str(j['error']),
       );
 }
+
+/// A note on a customer / lead / deal (Frappe CRM's FCRM Note).
+class Note {
+  Note({
+    required this.id,
+    required this.title,
+    required this.text,
+    this.ownerName,
+    this.created,
+    this.modified,
+    this.canEdit = false,
+    this.fromLead = false,
+  });
+
+  final String id;
+  final String title;
+  final String text;
+  final String? ownerName;
+  final DateTime? created;
+  final DateTime? modified;
+  final bool canEdit;
+  final bool fromLead; // written on the lead this deal came from
+
+  factory Note.fromJson(Map<String, dynamic> j, {String? partyDoctype}) => Note(
+        id: j['id']?.toString() ?? '',
+        title: j['title']?.toString() ?? '',
+        text: j['text']?.toString() ?? '',
+        ownerName: str(j['owner_name']),
+        created: DateTime.tryParse(j['created']?.toString() ?? '')?.toLocal(),
+        modified: DateTime.tryParse(j['modified']?.toString() ?? '')?.toLocal(),
+        canEdit: j['can_edit'] == true,
+        fromLead: partyDoctype == 'CRM Deal' && j['reference_doctype'] == 'CRM Lead',
+      );
+}

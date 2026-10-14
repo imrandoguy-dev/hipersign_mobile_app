@@ -12,6 +12,7 @@ import '../../core/recordings/recording_service.dart';
 import '../../shared/models/models.dart';
 import '../activities/activity_form.dart';
 import '../customers/customer_detail_screen.dart';
+import '../notes/notes.dart';
 
 /// Opened by the phone when a work call ends (like Truecaller's after-call screen), even if
 /// Hipersign was closed: saves the call recording and the call log, and offers quick actions.
@@ -181,6 +182,12 @@ class _AfterCallScreenState extends State<AfterCallScreen> {
           ),
         if (_missed) const SizedBox(height: 10),
         if (party != null) ...[
+          FilledButton.icon(
+            icon: const Icon(Icons.note_add_outlined),
+            label: const Text('Add note about this call'),
+            onPressed: () => openNoteEditor(context, doctype: party.doctype, name: party.id, partyName: party.name),
+          ),
+          const SizedBox(height: 10),
           OutlinedButton.icon(
             icon: const Icon(Icons.phone_callback_outlined),
             label: const Text('Add follow-up'),

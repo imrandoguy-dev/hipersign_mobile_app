@@ -14,6 +14,7 @@ import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../activities/activity_detail_screen.dart';
 import '../activities/activity_form.dart';
+import '../notes/notes.dart';
 import '../recordings/recording_widgets.dart';
 import '../recordings/recordings_screen.dart';
 import '../trials/book_trial_screen.dart';
@@ -36,6 +37,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   ApiException? _error;
   bool _loading = true;
   List<CallRecording> _recordings = [];
+  List<Note>? _notes;
   final _player = RecordingPlayer();
 
   bool get _showRecordings =>
@@ -67,6 +69,59 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     }
   }
 
+  Future<void> _loadNotes() async {
+    try {
+      final n = await context.read<SessionController>().repo.notes(widget.doctype, widget.name);
+      if (mounted) setState(() => _notes = n);
+    } on ApiException {
+      // Notes are extra; the page still works without them (e.g. older server).
+    }
+  }
+
+  Future<void> _addNote(Party p) async {
+    if (await openNoteEditor(context, doctype: p.doctype, name: p.id, partyName: p.name)) _loadNotes();
+  }
+
+  List<Widget> _notesSection(Party p) {
+    final notes = _notes ?? const <Note>[];
+    return [
+      SectionHeader('Notes', count: notes.length),
+      if (_notes != null && notes.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20),
+          child: Text('No notes yet.', style: TextStyle(color: HsColors.textSecondary)),
+        ),
+      for (final n in notes.take(3))
+        NoteCard(
+          note: n,
+          onTap: () async {
+            if (await openNote(context, doctype: p.doctype, name: p.id, partyName: p.name, note: n)) _loadNotes();
+          },
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+        child: Row(children: [
+          TextButton.icon(
+            icon: const Icon(Icons.note_add_outlined, size: 18),
+            label: const Text('Add note'),
+            onPressed: () => _addNote(p),
+          ),
+          if (notes.length > 3)
+            TextButton(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => NotesScreen(doctype: p.doctype, name: p.id, partyName: p.name)),
+                );
+                _loadNotes();
+              },
+              child: Text('All ${notes.length} notes'),
+            ),
+        ]),
+      ),
+    ];
+  }
+
   Future<void> _loadRecordings() async {
     if (!mounted || !_showRecordings) return;
     try {
@@ -91,6 +146,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         _error = null;
       });
       _loadRecordings();
+      _loadNotes();
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e);
     } finally {
@@ -164,6 +220,11 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Wrap(spacing: 8, runSpacing: 8, children: [
+                    ActionChip(
+                      avatar: const Icon(Icons.note_add_outlined, size: 18),
+                      label: const Text('Note'),
+                      onPressed: () => _addNote(p),
+                    ),
                     if (profile.can('create_activity'))
                       ActionChip(
                         avatar: const Icon(Icons.phone_callback_outlined, size: 18),
@@ -193,6 +254,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                       ),
                   ]),
                 ),
+                ..._notesSection(p),
                 if (_next != null) ...[
                   const SectionHeader('Next activity'),
                   ActivityCard(activity: _next!, onTap: () => _open(_next!)),
