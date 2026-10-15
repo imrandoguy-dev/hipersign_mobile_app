@@ -29,7 +29,9 @@ class ActivityCard extends StatelessWidget {
     final a = activity;
     final when = a.start == null
         ? 'No date set'
-        : (overdue ? 'Overdue · was ${fmtDayTime(a.start)}' : '${fmtTime(a.start)} - ${fmtTime(a.end)}');
+        : (overdue
+            ? 'Overdue · was ${relativeDay(a.start!)}, ${fmtTime(a.start)}'
+            : '${relativeDay(a.start!)} · ${fmtTime(a.start)} - ${fmtTime(a.end)}');
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       child: Semantics(

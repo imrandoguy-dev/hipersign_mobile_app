@@ -29,6 +29,7 @@ void main() {
     ));
     expect(find.text('Site visit'), findsOneWidget);
     expect(find.text('Scheduled'), findsOneWidget);
+    expect(find.textContaining(' · '), findsWidgets); // the date is shown, not only the time
     expect(find.text('ABC University'), findsOneWidget);
     expect(find.byTooltip('Call'), findsOneWidget);
     expect(find.byTooltip('WhatsApp'), findsOneWidget);
@@ -49,3 +50,4 @@ void main() {
     expect(find.textContaining('Overdue · was'), findsOneWidget);
   });
 }
+

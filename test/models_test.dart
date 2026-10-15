@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hipersign_mobile_app/shared/widgets/common.dart';
 import 'package:hipersign_mobile_app/app/theme.dart';
 import 'package:hipersign_mobile_app/core/api/api_client.dart';
 import 'package:hipersign_mobile_app/core/repository.dart';
@@ -67,5 +68,14 @@ void main() {
     final k2 = randomKey(16);
     expect(k1.length, 32);
     expect(k1 == k2, isFalse);
+  });
+
+  test('relative day labels', () {
+    final now = DateTime(2026, 10, 15, 8);
+    expect(relativeDay(DateTime(2026, 10, 15, 22), now: now), 'Today');
+    expect(relativeDay(DateTime(2026, 10, 16, 9), now: now), 'Tomorrow');
+    expect(relativeDay(DateTime(2026, 10, 14, 9), now: now), 'Yesterday');
+    expect(relativeDay(DateTime(2026, 10, 19, 9), now: now), 'Mon 19 Oct');
+    expect(relativeDay(DateTime(2027, 1, 4, 9), now: now), 'Mon 4 Jan 2027');
   });
 }

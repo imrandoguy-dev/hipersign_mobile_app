@@ -8,6 +8,16 @@ String fmtTime(DateTime? d) => d == null ? '--' : DateFormat.jm().format(d);
 String fmtDay(DateTime? d) => d == null ? 'No date' : DateFormat('EEE, d MMM').format(d);
 String fmtDayTime(DateTime? d) => d == null ? 'No date set' : DateFormat('EEE d MMM, h:mm a').format(d);
 
+/// "Today", "Tomorrow", "Yesterday", else "Fri 16 Oct" (with the year when it isn't this year).
+String relativeDay(DateTime d, {DateTime? now}) {
+  final n = now ?? DateTime.now();
+  final days = DateTime(d.year, d.month, d.day).difference(DateTime(n.year, n.month, n.day)).inDays;
+  if (days == 0) return 'Today';
+  if (days == 1) return 'Tomorrow';
+  if (days == -1) return 'Yesterday';
+  return DateFormat(d.year == n.year ? 'EEE d MMM' : 'EEE d MMM yyyy').format(d);
+}
+
 String ago(DateTime? d) {
   if (d == null) return 'never';
   final diff = DateTime.now().difference(d);
