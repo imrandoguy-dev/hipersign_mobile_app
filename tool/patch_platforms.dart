@@ -326,7 +326,7 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('setWorkSims')) return;
+  if (current.contains('pickDocument')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
@@ -345,6 +345,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.CallLog
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.telecom.TelecomManager
 import io.flutter.embedding.android.FlutterActivity
@@ -372,6 +373,7 @@ class MainActivity : FlutterActivity() {
     private var pendingNumber: String? = null
     private var pendingCallResult: MethodChannel.Result? = null
     private var pendingAudioResult: MethodChannel.Result? = null
+    private var pendingDocResult: MethodChannel.Result? = null
 
     private val audioPermission: String
         get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
@@ -527,6 +529,20 @@ class MainActivity : FlutterActivity() {
                                 runOnUiThread { result.error("COPY_FAILED", e.message, null) }
                             }
                         }.start()
+                    }
+                }
+                "pickDocument" -> {
+                    // WhatsApp: choose any file (PDF, Excel...) - copied into the app's cache.
+                    pendingDocResult?.success(null)
+                    pendingDocResult = result
+                    try {
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("*/*")
+                        startActivityForResult(intent, DOC_REQUEST)
+                    } catch (e: Exception) {
+                        pendingDocResult = null
+                        result.error("NO_PICKER", "No file picker on this phone", null)
                     }
                 }
                 "openAppSettings" -> {
@@ -715,6 +731,36 @@ class MainActivity : FlutterActivity() {
         return dest.absolutePath
     }
 
+    @Deprecated("Uses the classic activity result API (FlutterActivity)")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != DOC_REQUEST) return
+        val result = pendingDocResult ?: return
+        pendingDocResult = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) {
+            result.success(null)
+            return
+        }
+        Thread {
+            try {
+                var name = "document"
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                    if (c.moveToFirst() && !c.isNull(0)) name = c.getString(0)
+                }
+                val dir = File(cacheDir, "wa_docs")
+                dir.mkdirs()
+                val safe = name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "document" }
+                val dest = File(dir, safe)
+                val input = contentResolver.openInputStream(uri) ?: throw IllegalStateException("Cannot open the file")
+                input.use { source -> dest.outputStream().use { target -> source.copyTo(target) } }
+                runOnUiThread { result.success(dest.absolutePath) }
+            } catch (e: Exception) {
+                runOnUiThread { result.error("COPY_FAILED", e.message, null) }
+            }
+        }.start()
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         val ok = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
@@ -752,6 +798,7 @@ class MainActivity : FlutterActivity() {
         private const val CALL_REQUEST = 4711
         private const val AUDIO_REQUEST = 4712
         private const val CALLER_ID_REQUEST = 4713
+        private const val DOC_REQUEST = 4714
     }
 }
 ''';

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -278,8 +277,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           path = (await picker.pickVideo(source: ImageSource.gallery, maxDuration: const Duration(minutes: 3)))?.path;
         case 'document':
           kind = 'document';
-          final r = await FilePicker.platform.pickFiles(type: FileType.any);
-          path = r?.files.single.path;
+          if (!Platform.isAndroid) {
+            showSnack('Documents can be sent from the Android app.', error: true);
+            return;
+          }
+          path = await const MethodChannel('hipersign/phone').invokeMethod<String>('pickDocument');
       }
       if (path == null || !mounted) return;
       final caption = await _confirmFile(path, kind);
