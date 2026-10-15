@@ -28,7 +28,8 @@ jobs:
           code=$?
           cat setup.txt
           # Surface the reason as annotations (readable from the run page / API).
-          if [ $code -ne 0 ]; then tail -25 setup.txt | while IFS= read -r line; do echo "::error::$line"; done; fi
+          # (GitHub keeps only 10 annotations per step, so pick the telling lines.)
+          if [ $code -ne 0 ]; then grep -iE "error|because|solving|exception|failed|requires|not found|incompatible" setup.txt | tail -9 | while IFS= read -r line; do echo "::error::$line"; done; fi
           exit $code
       - name: Analyze
         run: |
@@ -108,7 +109,8 @@ jobs:
           code=$?
           cat setup.txt
           # Surface the reason as annotations (readable from the run page / API).
-          if [ $code -ne 0 ]; then tail -25 setup.txt | while IFS= read -r line; do echo "::error::$line"; done; fi
+          # (GitHub keeps only 10 annotations per step, so pick the telling lines.)
+          if [ $code -ne 0 ]; then grep -iE "error|because|solving|exception|failed|requires|not found|incompatible" setup.txt | tail -9 | while IFS= read -r line; do echo "::error::$line"; done; fi
           exit $code
       - name: Build iOS (compile check, unsigned)
         run: |
