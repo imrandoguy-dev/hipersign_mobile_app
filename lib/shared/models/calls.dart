@@ -18,6 +18,8 @@ class CallEntry {
     this.activityId,
     this.recordingId,
     this.recordingExt,
+    this.attempts,
+    this.firstAt,
   });
 
   final String id;
@@ -35,6 +37,8 @@ class CallEntry {
   final String? activityId;
   final String? recordingId;
   final String? recordingExt;
+  final int? attempts; // "not reached yet" list: calls made to this number so far
+  final DateTime? firstAt;
 
   String get title => partyName ?? phone;
 
@@ -61,6 +65,8 @@ class CallEntry {
       activityId: str(j['activity_id']),
       recordingId: str(r?['id']),
       recordingExt: str(r?['ext']),
+      attempts: (j['attempts'] as num?)?.toInt(),
+      firstAt: parseDate(j['first_at']),
     );
   }
 }

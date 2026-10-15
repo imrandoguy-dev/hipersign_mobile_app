@@ -17,6 +17,7 @@ import '../recordings/recording_widgets.dart';
 
 const _filters = {
   'all': 'All',
+  'not_reached': 'Not reached yet',
   'connected': 'Connected',
   'not_connected': 'Not answered',
   'incoming': 'Incoming',
@@ -226,10 +227,12 @@ class _CallsScreenState extends State<CallsScreen> {
               if (_error != null) SyncBanner(error: _error, syncedAt: _syncedAt),
               if (_loading && _items.isEmpty) const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
               if (!_loading && _items.isEmpty && _error == null)
-                const EmptyState(
-                  icon: Icons.call_outlined,
-                  title: 'No calls here yet',
-                  message: 'Calls with customers, leads and deals appear here a moment after they end.',
+                EmptyState(
+                  icon: _filter == 'not_reached' ? Icons.check_circle_outline : Icons.call_outlined,
+                  title: _filter == 'not_reached' ? 'Everyone has been reached' : 'No calls here yet',
+                  message: _filter == 'not_reached'
+                      ? 'Numbers you called that never picked up show here until a call connects.'
+                      : 'Calls with customers, leads and deals appear here a moment after they end.',
                 ),
               ...rows,
               if (_loadingMore) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
@@ -296,7 +299,15 @@ class _CallRow extends StatelessWidget {
           ? (Icons.call_made, const Color(0xFF2E7D32), 'Outgoing')
           : (Icons.call_made, HsColors.danger, 'Not answered'),
     };
-    final details = [
+    final tries = c.attempts;
+    final details = tries != null
+        ? [
+            tries == 1 ? '1 try' : '$tries tries',
+            if (c.firstAt != null && tries > 1) 'since ${relativeDay(c.firstAt!)}',
+            if (c.partyKind != null) c.partyKind!,
+            if (showCaller && c.callerName != null) c.callerName!,
+          ].join(' · ')
+        : [
       what,
       if (c.connected) fmtDuration(c.duration),
       if (c.callType != null) c.callType!,

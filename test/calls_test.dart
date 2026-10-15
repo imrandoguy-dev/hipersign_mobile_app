@@ -31,6 +31,15 @@ void main() {
     expect(p.nextCursor, '40');
   });
 
+  test('not reached yet row', () {
+    final c = CallEntry.fromJson({
+      'id': 'c9', 'direction': 'Outgoing', 'connected': false, 'duration': 0, 'phone': '+919800000001',
+      'attempts': 3, 'first_at': '2026-10-13T10:00:00+05:30',
+    });
+    expect(c.attempts, 3);
+    expect(c.firstAt, isNotNull);
+  });
+
   test('talk time', () {
     expect(talkTime(45), '45 s');
     expect(talkTime(240), '4 min');
