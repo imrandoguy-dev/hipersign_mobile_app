@@ -151,6 +151,7 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
           initialChildSize: 0.85,
           builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
             const Text('Add a session', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const Text('Pick the day and time for this session (any trainer).'),
             const SizedBox(height: 12),
             SlotPicker(
               bookingType: b.bookingType,

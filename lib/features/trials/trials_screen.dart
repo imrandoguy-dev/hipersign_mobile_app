@@ -148,11 +148,22 @@ class BookingCard extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(b.partyName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
-                    Text('${relativeDay(b.start ?? DateTime.now())}, ${fmtTime(b.start)} - with ${b.trainerName ?? 'trainer'}',
+                    Text(
+                        '${(b.trial?.sessions.length ?? 1) > 1 ? 'Next: ' : ''}'
+                        '${relativeDay(b.start ?? DateTime.now())}, ${fmtTime(b.start)} - with ${b.trainerName ?? 'trainer'}',
                         style: const TextStyle(fontSize: 13)),
                     if (b.trial != null && b.trial!.isMultiDay) ...[
                       const SizedBox(height: 6),
                       TrialCountdown(trial: b.trial!, compact: true),
+                      if (b.trial!.sessions.length > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '${b.trial!.sessions.where((s) => s.status != 'Cancelled').length} sessions · '
+                            '${b.trial!.sessionsDone} done',
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                        ),
                     ],
                   ]),
                 ),

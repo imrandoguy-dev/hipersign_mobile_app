@@ -55,9 +55,8 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
           );
       bumpRefresh();
       if (!mounted) return;
-      final count = b.trial?.sessions.length ?? 1;
       showSnack(_days > 1
-          ? '$_days-day trial booked: $count session${count == 1 ? '' : 's'} with ${b.trainerName ?? 'trainer'}'
+          ? '$_days-day trial booked - first session with ${b.trainerName ?? 'trainer'}'
           : 'Trial booked with ${b.trainerName ?? 'trainer'}');
       if (skipped.isNotEmpty) {
         await showDialog<void>(
@@ -134,7 +133,7 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
         const SizedBox(height: 16),
         const Text('Trial length', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        const Text('Counted in working days - Sundays and holidays are skipped. A session is booked at the same time each day; you can move or add sessions later.',
+        const Text('How long the trial runs (working days - Sundays and holidays are skipped). Only the first session is booked now; add more sessions later from the trial, each at its own time.',
             style: TextStyle(fontSize: 12.5, color: HsColors.textSecondary)),
         const SizedBox(height: 8),
         TrialDaysPicker(days: _days, onChanged: (d) => setState(() => _days = d)),
@@ -160,7 +159,7 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
                 : Text(_slot == null
                     ? 'Pick a time slot'
                     : (_days > 1
-                        ? 'Book $_days-day trial from ${fmtDayTime(_slot!.start)}'
+                        ? 'Book $_days-day trial · first session ${fmtDayTime(_slot!.start)}'
                         : 'Book ${fmtDayTime(_slot!.start)}')),
           ),
         ),
