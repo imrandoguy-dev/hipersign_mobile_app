@@ -118,6 +118,9 @@ class Repository {
     return Activity.fromJson(Map<String, dynamic>.from((data as Map)['activity'] as Map));
   }
 
+  Future<void> deleteActivity(String id, {String? reason}) =>
+      api.post('activities.delete_activity', {'activity_id': id, 'reason': reason});
+
   /// Edit an open follow-up / meeting. Only the keys given are changed.
   Future<Activity> updateActivity(String id, Map<String, dynamic> values) async {
     final data = await api.post('activities.update_activity', {'activity_id': id, ...values});

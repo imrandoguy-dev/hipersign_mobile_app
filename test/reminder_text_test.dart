@@ -19,5 +19,7 @@ void main() {
     expect(body, contains('Discuss AMC renewal'));
     expect(body, contains('10:30'));
     expect(body, contains('Notes: Bring the new price list'));
+    final (atTime, _) = NotificationService.reminderText(a, 0);
+    expect(atTime, 'Follow-up now · Amal Traders');
   });
 }

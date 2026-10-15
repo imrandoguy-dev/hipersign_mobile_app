@@ -165,7 +165,8 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         'reference_doctype': _party!.doctype,
         'reference_name': _party!.id,
         'start': Repository.iso(_start),
-        'end': Repository.iso(_start.add(Duration(minutes: _minutes))),
+        // Follow-ups are a point in time (a short 15-min slot); meetings use the chosen duration.
+        'end': Repository.iso(_start.add(Duration(minutes: _type == 'Meeting' ? _minutes : 15))),
         'priority': _priority,
         'description': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
         'location': _location.text.trim().isEmpty ? null : _location.text.trim(),
@@ -228,7 +229,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
           ),
         ]),
         const SizedBox(height: 12),
-        DropdownButtonFormField<int>(
+        if (_type == 'Meeting') DropdownButtonFormField<int>(
           initialValue: _customMinutes ?? _minutes,
           decoration: const InputDecoration(labelText: 'Duration'),
           items: [if (_customMinutes != null) _customMinutes!, 15, 30, 45, 60, 90, 120]

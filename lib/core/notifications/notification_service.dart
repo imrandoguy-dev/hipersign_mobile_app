@@ -15,7 +15,9 @@ import '../cache/cache_store.dart';
 import 'firebase_options.dart';
 
 const appVersion = '0.1.0';
-const _channelId = 'hipersign_alerts';
+// Reminders ring and vibrate. (A new id: Android keeps an old channel's settings forever.)
+const _channelId = 'hipersign_reminders';
+const _oldChannelId = 'hipersign_alerts';
 const _localIdsPref = 'local_reminder_ids';
 
 /// Push (FCM / APNs via Firebase) + local reminders.
@@ -46,8 +48,11 @@ class NotificationService {
       _channelId,
       'Hipersign alerts',
       channelDescription: 'Assignments, reminders and trial updates',
-      importance: Importance.high,
-      priority: Priority.high,
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
+      category: AndroidNotificationCategory.reminder,
     ),
     iOS: DarwinNotificationDetails(presentAlert: true, presentSound: true, presentBadge: true),
   );
@@ -58,8 +63,11 @@ class NotificationService {
           _channelId,
           'Hipersign alerts',
           channelDescription: 'Assignments, reminders and trial updates',
-          importance: Importance.high,
-          priority: Priority.high,
+          importance: Importance.max,
+          priority: Priority.max,
+          playSound: true,
+          enableVibration: true,
+          category: AndroidNotificationCategory.reminder,
           styleInformation: BigTextStyleInformation(body),
         ),
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true, presentBadge: true),
@@ -69,7 +77,9 @@ class NotificationService {
   static (String, String) reminderText(Activity a, int minutesBefore) {
     final kind = a.activityType.toLowerCase();
     final who = a.party?.name;
-    final head = 'Upcoming $kind ${minutesBefore > 0 ? 'in $minutesBefore min' : 'now'}';
+    final head = minutesBefore > 0
+        ? 'Upcoming $kind in $minutesBefore min'
+        : '${kind[0].toUpperCase()}${kind.substring(1)} now';
     final title = who == null || who.isEmpty ? head : '$head · $who';
     String clip(String t, int n) {
       final s = t.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -102,9 +112,14 @@ class NotificationService {
       await _android?.createNotificationChannel(const AndroidNotificationChannel(
         _channelId,
         'Hipersign alerts',
-        description: 'Assignments, reminders and trial updates',
-        importance: Importance.high,
+        description: 'Reminders, assignments and trial updates',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
       ));
+      try {
+        await _android?.deleteNotificationChannel(channelId: _oldChannelId);
+      } catch (_) {}
       final launch = await _local.getNotificationAppLaunchDetails();
       final launchPayload = launch?.notificationResponse?.payload;
       if (launch?.didNotificationLaunchApp == true && isDeepLink(launchPayload)) {
@@ -283,24 +298,28 @@ class NotificationService {
       ..sort((a, b) => a.start!.compareTo(b.start!));
     final exact = await canScheduleExact();
     final ids = <int>[];
-    for (final a in upcoming.take(40)) {
-      final at = a.start!.subtract(Duration(minutes: minutesBefore));
-      if (!at.isAfter(now.add(const Duration(seconds: 30)))) continue;
-      final id = _idFor(a.id);
-      try {
-        final (title, body) = reminderText(a, minutesBefore);
-        await _local.zonedSchedule(
-          id: id,
-          title: title,
-          body: body,
-          scheduledDate: tz.TZDateTime.from(at.toUtc(), tz.UTC),
-          notificationDetails: _expandable(body),
-          androidScheduleMode: exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
-          payload: '/activity/${a.id}',
-        );
-        ids.add(id);
-      } catch (_) {
-        // Permission denied or OS limit reached: skip quietly; server push still applies.
+    for (final a in upcoming.take(30)) {
+      // One N minutes before, and one again at the exact start time.
+      for (final (offset, idBase) in [(minutesBefore, _idFor(a.id)), (0, _idFor(a.id) + 0x10000000)]) {
+        if (offset == minutesBefore && offset == 0 && idBase != _idFor(a.id)) continue;
+        final at = a.start!.subtract(Duration(minutes: offset));
+        if (!at.isAfter(now.add(const Duration(seconds: 30)))) continue;
+        try {
+          final (title, body) = reminderText(a, offset);
+          await _local.zonedSchedule(
+            id: idBase,
+            title: title,
+            body: body,
+            scheduledDate: tz.TZDateTime.from(at.toUtc(), tz.UTC),
+            notificationDetails: _expandable(body),
+            androidScheduleMode:
+                exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
+            payload: '/activity/${a.id}',
+          );
+          ids.add(idBase);
+        } catch (_) {
+          // Permission denied or OS limit reached: skip quietly; server push still applies.
+        }
       }
     }
     final store = await CacheStore.instance();

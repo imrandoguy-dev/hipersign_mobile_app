@@ -134,7 +134,7 @@ void _androidManifest() {
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
-        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="hipersign_alerts" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="hipersign_reminders" />
 ''';
     s = s.replaceFirst('</application>', '$receivers    </application>');
   }

@@ -100,6 +100,39 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
     await _afterWrite(updated);
   }
 
+  Future<void> _delete(Activity a) async {
+    final reason = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete this ${a.activityType.toLowerCase()}?'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('"${a.title}" will be removed from ERP and its reminders stop. This can\'t be undone.'),
+          const SizedBox(height: 12),
+          TextField(controller: reason, decoration: const InputDecoration(labelText: 'Reason (optional)')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: HsColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _repo.deleteActivity(a.id, reason: reason.text.trim().isEmpty ? null : reason.text.trim());
+      bumpRefresh();
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Deleted from ERP')));
+      Navigator.of(context).pop();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   Future<void> _reschedule() async {
     final a = _a!;
     final now = DateTime.now();
@@ -202,6 +235,12 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
               onPressed: () async {
                 if (await openActivityEdit(context, a)) _load();
               },
+            ),
+          if (a != null && a.trialBooking == null)
+            IconButton(
+              tooltip: 'Delete',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => _delete(a),
             ),
         ],
       ),
