@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../app/theme.dart';
 import '../../core/auth/session.dart';
 import '../activities/activity_list_screen.dart';
+import '../calls/calls_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../recordings/recordings_screen.dart';
 import '../settings/settings_screen.dart';
@@ -42,6 +43,8 @@ class MoreScreen extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 16),
+        if (p.can('customers'))
+          _Tile(icon: Icons.call_outlined, title: 'Calls', onTap: () => open(const CallsScreen())),
         if (p.can('meetings'))
           _Tile(icon: Icons.groups_2_outlined, title: 'Meetings', onTap: () => open(const ActivityListScreen(meetings: true))),
         if (p.can('trial_booking'))

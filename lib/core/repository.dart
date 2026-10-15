@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:intl/intl.dart';
 
+import '../shared/models/calls.dart';
 import '../shared/models/models.dart';
 import '../shared/models/whatsapp.dart';
 import 'api/api_client.dart';
@@ -463,6 +464,29 @@ class Repository {
     final f = File(path);
     if (await f.exists() && await f.length() > 0) return path;
     await api.downloadTo('whatsapp.media', {'message': m.id}, path, what: 'file');
+    return path;
+  }
+
+  // ------------------------------------------------------------ calls list
+
+  Future<CallsPage> calls({String scope = 'mine', String filter = 'all', String? query, String? cursor}) async {
+    final key = 'calls:$scope:$filter';
+    final params = {'scope': scope, 'filter': filter, 'query': query, 'cursor': cursor, 'page_size': 40};
+    final plain = (query == null || query.isEmpty) && cursor == null;
+    final data = plain ? await fetch(key, 'calls.list_calls', params) : await api.get('calls.list_calls', params);
+    return CallsPage.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  CallsPage? cachedCalls(String scope, String filter) {
+    final c = cache.read('calls:$scope:$filter');
+    return c == null ? null : CallsPage.fromJson(Map<String, dynamic>.from(c.data as Map));
+  }
+
+  Future<String> callRecordingFile(String id, String? ext) async {
+    final path = '${Directory.systemTemp.path}/hm-rec-$id.${ext ?? 'm4a'}';
+    final f = File(path);
+    if (await f.exists() && await f.length() > 0) return path;
+    await api.downloadTo('recordings.download', {'name': id}, path);
     return path;
   }
 }

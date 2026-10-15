@@ -11,6 +11,7 @@ import '../../core/auth/session.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
+import '../calls/calls_screen.dart';
 import '../recordings/recordings_screen.dart';
 import 'customer_detail_screen.dart';
 
@@ -101,6 +102,11 @@ class _CustomersScreenState extends State<CustomersScreen> {
       appBar: AppBar(
         title: const Text('Customers', style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
+          IconButton(
+            tooltip: 'Recent calls',
+            icon: const Icon(Icons.history),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CallsScreen())),
+          ),
           if (Platform.isAndroid && context.read<SessionController>().profile!.can('call_recordings'))
             IconButton(
               tooltip: 'Call recordings',
