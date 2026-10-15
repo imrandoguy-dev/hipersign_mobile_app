@@ -22,7 +22,14 @@ jobs:
           channel: stable
           cache: true
       - name: Generate native projects and apply Hipersign settings
-        run: bash tool/setup_platforms.sh
+        run: |
+          set +e
+          bash tool/setup_platforms.sh > setup.txt 2>&1
+          code=$?
+          cat setup.txt
+          # Surface the reason as annotations (readable from the run page / API).
+          if [ $code -ne 0 ]; then tail -25 setup.txt | while IFS= read -r line; do echo "::error::$line"; done; fi
+          exit $code
       - name: Analyze
         run: |
           set +e
@@ -95,7 +102,14 @@ jobs:
           channel: stable
           cache: true
       - name: Generate native projects and apply Hipersign settings
-        run: bash tool/setup_platforms.sh
+        run: |
+          set +e
+          bash tool/setup_platforms.sh > setup.txt 2>&1
+          code=$?
+          cat setup.txt
+          # Surface the reason as annotations (readable from the run page / API).
+          if [ $code -ne 0 ]; then tail -25 setup.txt | while IFS= read -r line; do echo "::error::$line"; done; fi
+          exit $code
       - name: Build iOS (compile check, unsigned)
         run: |
           set +e
