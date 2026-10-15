@@ -13,7 +13,7 @@ void main() {
       'status': 'Pending',
       'display_state': 'active',
       'priority': 'Medium',
-      'start': '2026-10-13T10:30:00+05:30',
+      'start': DateTime.now().add(const Duration(days: 2)).toIso8601String(),
       'party': {
         'kind': 'Customer',
         'doctype': 'Customer',
@@ -32,5 +32,20 @@ void main() {
     expect(find.text('ABC University'), findsOneWidget);
     expect(find.byTooltip('Call'), findsOneWidget);
     expect(find.byTooltip('WhatsApp'), findsOneWidget);
+  });
+
+  testWidgets('open activity whose time has passed is shown as Overdue', (tester) async {
+    final a = Activity.fromJson({
+      'id': '2',
+      'title': 'Missed call back',
+      'activity_type': 'Follow-up',
+      'status': 'Pending',
+      'display_state': 'active',
+      'priority': 'High',
+      'start': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+    });
+    await tester.pumpWidget(MaterialApp(theme: buildTheme(), home: Scaffold(body: ActivityCard(activity: a, onTap: () {}))));
+    expect(find.text('Overdue'), findsOneWidget);
+    expect(find.textContaining('Overdue · was'), findsOneWidget);
   });
 }
