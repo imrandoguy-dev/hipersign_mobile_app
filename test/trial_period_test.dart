@@ -22,5 +22,7 @@ void main() {
     expect(_t({'phase': 'upcoming', 'starts_in': 4}).countdown, 'Starts in 4 days · 7-day trial');
     expect(_t({'phase': 'ended'}).countdown, 'Trial ended · 7 days');
     expect(_t({'phase': 'running'}).sessions.length, 2);
+    expect(_t({'phase': 'running', 'day_no': 5, 'days_left': 2, 'today_off': true}).countdown,
+        'Paused today (Sunday / holiday) · 2 days left');
   });
 }

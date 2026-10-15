@@ -289,6 +289,7 @@ class TrialPeriod {
     required this.startsIn,
     required this.sessions,
     required this.sessionsDone,
+    this.todayOff = false,
   });
 
   final String series; // id of the trial's first session
@@ -301,6 +302,7 @@ class TrialPeriod {
   final int startsIn;
   final List<TrialSession> sessions;
   final int sessionsDone;
+  final bool todayOff; // Sunday / holiday: the trial pauses today
 
   bool get isMultiDay => days > 1 || sessions.length > 1;
 
@@ -308,6 +310,7 @@ class TrialPeriod {
   String get countdown => switch (phase) {
         'upcoming' => '${startsIn <= 1 ? 'Starts tomorrow' : 'Starts in $startsIn days'} · $days-day trial',
         'ended' => 'Trial ended · $days days',
+        _ when todayOff => 'Paused today (Sunday / holiday) · $daysLeft day${daysLeft == 1 ? '' : 's'} left',
         _ => daysLeft == 0
             ? 'Day $dayNo of $days · last day today'
             : 'Day $dayNo of $days · $daysLeft day${daysLeft == 1 ? '' : 's'} left',
@@ -326,6 +329,7 @@ class TrialPeriod {
             .map((e) => TrialSession.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
         sessionsDone: (j['sessions_done'] as num?)?.toInt() ?? 0,
+        todayOff: j['today_off'] == true,
       );
 }
 

@@ -134,7 +134,7 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
         const SizedBox(height: 16),
         const Text('Trial length', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        const Text('Sessions are booked at the same time every day the trainer works. You can move or add sessions later.',
+        const Text('Counted in working days - Sundays and holidays are skipped. A session is booked at the same time each day; you can move or add sessions later.',
             style: TextStyle(fontSize: 12.5, color: HsColors.textSecondary)),
         const SizedBox(height: 8),
         TrialDaysPicker(days: _days, onChanged: (d) => setState(() => _days = d)),
