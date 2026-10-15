@@ -91,8 +91,11 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
     }
   }
 
-  Future<void> _reschedule() async {
+  /// Moves one booking (this one, or any session of the trial) to a new day/time.
+  Future<void> _reschedule([TrialSession? session]) async {
     final b = _b!;
+    final id = session?.id ?? b.id;
+    final current = session?.start ?? b.start;
     TrainerSlot? picked;
     final ok = await showModalBottomSheet<bool>(
       context: context,
@@ -103,7 +106,13 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
           expand: false,
           initialChildSize: 0.85,
           builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
-            const Text('Pick a new time', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(
+              session?.sessionNo != null && session!.sessionNo! > 0
+                  ? 'New time for session ${session.sessionNo}'
+                  : 'Pick a new time',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            if (current != null) Text('Now: ${fmtDayTime(current)}'),
             const SizedBox(height: 12),
             SlotPicker(bookingType: b.bookingType, selectedId: picked?.id, onPick: (s) => setSheet(() => picked = s)),
             const SizedBox(height: 16),
@@ -117,12 +126,25 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
     );
     if (ok != true || picked == null || !mounted) return;
     final repo = context.read<SessionController>().repo;
-    final updated = await runWrite(context, () => repo.rescheduleBooking(b.id, picked!.id, null), success: 'Trial moved');
-    if (updated != null) {
-      bumpRefresh();
+    final updated = await runWrite(context, () => repo.rescheduleBooking(id, picked!.id, null),
+        success: session == null ? 'Trial moved' : 'Session moved');
+    bumpRefresh();
+    if (updated != null && id == b.id) {
       setState(() => _b = updated);
     } else {
-      _load(); // e.g. CONFLICT: show the current state
+      _load(); // another session changed, or a CONFLICT: show the current state
+    }
+  }
+
+  Future<void> _cancelSession(TrialSession s) async {
+    final reason = await _askText('Cancel this session?', 'Reason (optional)', 'Cancel session');
+    if (reason == null || !mounted) return;
+    final repo = context.read<SessionController>().repo;
+    final r = await runWrite(context, () => repo.cancelBooking(s.id, reason.isEmpty ? null : reason),
+        success: 'Session cancelled');
+    if (r != null) {
+      bumpRefresh();
+      _load();
     }
   }
 
@@ -208,8 +230,24 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
                   style: const TextStyle(fontSize: 12, color: HsColors.onPastel)),
             ),
             title: Text('${relativeDay(s.start ?? DateTime.now())}, ${fmtTime(s.start)}'),
-            subtitle: Text(s.status),
-            trailing: s.id == b.id ? const Text('this one') : const Icon(Icons.chevron_right),
+            subtitle: Text(s.id == b.id ? '${s.status} · this one' : s.status),
+            trailing: s.isActive
+                ? Row(mainAxisSize: MainAxisSize.min, children: [
+                    TextButton.icon(
+                      key: ValueKey('change-time-${s.id}'),
+                      onPressed: () => _reschedule(s),
+                      icon: const Icon(Icons.schedule, size: 18),
+                      label: const Text('Change time'),
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'More',
+                      onSelected: (v) {
+                        if (v == 'cancel') _cancelSession(s);
+                      },
+                      itemBuilder: (_) => const [PopupMenuItem(value: 'cancel', child: Text('Cancel this session'))],
+                    ),
+                  ])
+                : (s.id == b.id ? null : const Icon(Icons.chevron_right)),
             onTap: s.id == b.id
                 ? null
                 : () async {

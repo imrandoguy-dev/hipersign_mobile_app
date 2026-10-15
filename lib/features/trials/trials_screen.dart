@@ -155,16 +155,16 @@ class BookingCard extends StatelessWidget {
                     if (b.trial != null && b.trial!.isMultiDay) ...[
                       const SizedBox(height: 6),
                       TrialCountdown(trial: b.trial!, compact: true),
-                      if (b.trial!.sessions.length > 1)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '${b.trial!.sessions.where((s) => s.status != 'Cancelled').length} sessions · '
-                            '${b.trial!.sessionsDone} done',
-                            style: const TextStyle(fontSize: 12.5),
-                          ),
-                        ),
                     ],
+                    if (b.trial != null && b.trial!.sessions.where((s) => s.status != 'Cancelled').length > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Training days: ${trainingDays(b.trial!.sessions)}'
+                          '${b.trial!.sessionsDone > 0 ? ' · ${b.trial!.sessionsDone} done' : ''}',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ),
                   ]),
                 ),
               ),

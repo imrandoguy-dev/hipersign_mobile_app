@@ -5,6 +5,13 @@ import '../../shared/models/models.dart';
 import '../../shared/widgets/common.dart';
 
 /// Countdown banner of a multi-day trial: "Day 3 of 7 · 4 days left" with a progress bar.
+/// "Thu 16 Oct 2:00 PM, Fri 17 Oct 11:30 AM" - the (not cancelled) sessions in time order.
+String trainingDays(List<TrialSession> sessions) {
+  final live = sessions.where((s) => s.status != 'Cancelled' && s.start != null).toList()
+    ..sort((a, b) => a.start!.compareTo(b.start!));
+  return live.map((s) => fmtDayTime(s.start).replaceFirst(',', '')).join(', ');
+}
+
 class TrialCountdown extends StatelessWidget {
   const TrialCountdown({super.key, required this.trial, this.compact = false});
 

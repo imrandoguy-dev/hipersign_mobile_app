@@ -342,6 +342,8 @@ class TrialSession {
   final DateTime? start;
   final DateTime? end;
 
+  bool get isActive => status == 'Booked' || status == 'Rescheduled' || status == 'Pending Confirmation';
+
   factory TrialSession.fromJson(Map<String, dynamic> j) => TrialSession(
         id: j['id'].toString(),
         status: j['status']?.toString() ?? '',
