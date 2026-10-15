@@ -28,18 +28,21 @@ class HsColors {
   static const completed = Color(0xFFCDEED6);
   static const rescheduled = Color(0xFFE3DBF6);
   static const cancelled = Color(0xFFDADFE5);
+  static const overdue = Color(0xFFFAD2D2); // missed: open and its time has passed
+  static const overdueEdge = Color(0xFFC62828);
 
   static const whatsapp = Color(0xFF25D366);
 }
 
 /// Visual state of an activity / booking. Colour is never the only signal:
 /// every card also shows [label].
-enum ActivityState { active, pending, completed, rescheduled, cancelled }
+enum ActivityState { active, pending, overdue, completed, rescheduled, cancelled }
 
 extension ActivityStateStyle on ActivityState {
   Color get color => switch (this) {
         ActivityState.active => HsColors.active,
         ActivityState.pending => HsColors.pending,
+        ActivityState.overdue => HsColors.overdue,
         ActivityState.completed => HsColors.completed,
         ActivityState.rescheduled => HsColors.rescheduled,
         ActivityState.cancelled => HsColors.cancelled,
@@ -48,6 +51,7 @@ extension ActivityStateStyle on ActivityState {
   String get label => switch (this) {
         ActivityState.active => 'Scheduled',
         ActivityState.pending => 'Pending',
+        ActivityState.overdue => 'Overdue',
         ActivityState.completed => 'Completed',
         ActivityState.rescheduled => 'Rescheduled',
         ActivityState.cancelled => 'Cancelled',
@@ -56,6 +60,7 @@ extension ActivityStateStyle on ActivityState {
   IconData get icon => switch (this) {
         ActivityState.active => Icons.schedule,
         ActivityState.pending => Icons.hourglass_bottom,
+        ActivityState.overdue => Icons.error_outline,
         ActivityState.completed => Icons.check_circle,
         ActivityState.rescheduled => Icons.update,
         ActivityState.cancelled => Icons.cancel,
@@ -66,6 +71,7 @@ extension ActivityStateStyle on ActivityState {
         'completed' => ActivityState.completed,
         'rescheduled' => ActivityState.rescheduled,
         'cancelled' => ActivityState.cancelled,
+        'overdue' => ActivityState.overdue,
         _ => ActivityState.pending,
       };
 }

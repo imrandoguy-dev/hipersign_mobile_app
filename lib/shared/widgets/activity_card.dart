@@ -23,18 +23,23 @@ class ActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = stateOverride ?? activity.state;
+    // Missed work stands out: open and its time has passed -> red "Overdue".
+    final overdue = activity.isOpen && activity.start != null && activity.start!.isBefore(DateTime.now());
+    final state = overdue ? ActivityState.overdue : (stateOverride ?? activity.state);
     final a = activity;
     final when = a.start == null
         ? 'No date set'
-        : (a.isOverdue ? 'Overdue - ${fmtDayTime(a.start)}' : '${fmtTime(a.start)} - ${fmtTime(a.end)}');
+        : (overdue ? 'Overdue · was ${fmtDayTime(a.start)}' : '${fmtTime(a.start)} - ${fmtTime(a.end)}');
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       child: Semantics(
         label: '${a.activityType}, ${state.label}, ${a.title}, $when',
         child: Material(
           color: state.color,
-          borderRadius: BorderRadius.circular(18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: overdue ? const BorderSide(color: HsColors.overdueEdge, width: 1.5) : BorderSide.none,
+          ),
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
             onTap: onTap,

@@ -294,10 +294,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return widgets;
     }
 
-    // Day view: the day's assigned work first, then pending work carried over.
+    // Day view: the day's work first, then (at the bottom) every overdue item from earlier
+    // days / earlier today that is still open, then open work with no date.
     final scheduled = d.items;
-    final pending = [...d.overdue, ...d.unscheduled];
-    if (scheduled.isEmpty && pending.isEmpty) {
+    final shown = scheduled.map((a) => a.id).toSet();
+    final overdue = d.overdue.where((a) => !shown.contains(a.id)).toList();
+    final undated = d.unscheduled.where((a) => !shown.contains(a.id)).toList();
+    if (scheduled.isEmpty && overdue.isEmpty && undated.isEmpty) {
       return const [
         SliverToBoxAdapter(
           child: EmptyState(
@@ -319,10 +322,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
         )
       else
         SliverList(delegate: SliverChildListDelegate(_cards(scheduled))),
-      if (pending.isNotEmpty) ...[
-        SliverToBoxAdapter(child: SectionHeader('Pending', count: pending.length, color: HsColors.pending)),
-        SliverList(delegate: SliverChildListDelegate(_cards(pending, force: ActivityState.pending))),
+      if (overdue.isNotEmpty) ...[
+        SliverToBoxAdapter(child: SectionHeader('Overdue - still open', count: overdue.length, color: HsColors.overdue)),
+        SliverList(delegate: SliverChildListDelegate(_cards(overdue))),
       ],
+      if (undated.isNotEmpty) ...[
+        SliverToBoxAdapter(child: SectionHeader('No date yet', count: undated.length, color: HsColors.pending)),
+        SliverList(delegate: SliverChildListDelegate(_cards(undated, force: ActivityState.pending))),
+      ],
+      const SliverToBoxAdapter(child: SizedBox(height: 90)), // room above the + button
     ];
   }
 
@@ -378,7 +386,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           Container(
                             width: 7,
                             height: 7,
-                            decoration: BoxDecoration(color: ActivityStateStyle.parse(s).color, shape: BoxShape.circle),
+                            decoration: BoxDecoration(
+                              // open work on a past day = overdue (red)
+                              color: s == 'pending' ? HsColors.overdueEdge : ActivityStateStyle.parse(s).color,
+                              shape: BoxShape.circle,
+                            ),
                           ),
                     ],
                   ),
@@ -389,9 +401,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         const SizedBox(height: 12),
         Wrap(spacing: 14, runSpacing: 6, children: [
-          for (final s in [ActivityState.active, ActivityState.pending, ActivityState.rescheduled, ActivityState.completed])
+          for (final s in [ActivityState.active, ActivityState.overdue, ActivityState.rescheduled, ActivityState.completed])
             Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: s.color, shape: BoxShape.circle)),
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: s == ActivityState.overdue ? HsColors.overdueEdge : s.color,
+                  shape: BoxShape.circle,
+                ),
+              ),
               const SizedBox(width: 6),
               Text(s.label, style: const TextStyle(fontSize: 12, color: HsColors.textSecondary)),
             ]),
