@@ -5,9 +5,11 @@ import '../../app/nav.dart';
 import '../../app/refresh.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
+import '../../core/notifications/reminder_planner.dart';
 import '../../core/repository.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/common.dart';
+import '../../shared/widgets/reminder_picker.dart';
 import '../customers/party_picker.dart';
 import 'activity_detail_screen.dart';
 
@@ -73,10 +75,42 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         if (!const [15, 30, 45, 60, 90, 120].contains(m)) _customMinutes = m;
       }
       _priority = const ['Low', 'Medium', 'High'].contains(a.priority) ? a.priority : 'Medium';
+      _reminders = a.reminderOffsets;
     }
   }
 
   int? _customMinutes; // an existing duration that isn't in the list
+  List<int>? _reminders; // this activity's own reminders; null = my reminder setting
+
+  List<int> get _myReminders {
+    final cache = context.read<SessionController>().cache;
+    final own = parseOffsets(cache.getPref(reminderOffsetsPref));
+    if (own.isNotEmpty) return own;
+    final m = int.tryParse(cache.getPref(reminderMinutesPref) ?? '') ?? 15;
+    return {m, 0}.toList();
+  }
+
+  Widget _remindersTile() {
+    final mine = _myReminders;
+    return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      tileColor: Theme.of(context).colorScheme.surface,
+      leading: const Icon(Icons.alarm_outlined),
+      title: const Text('Reminders'),
+      subtitle: Text(_reminders == null ? 'My setting: ${describeReminders(mine)}' : describeReminders(_reminders!)),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        final r = await pickReminders(
+          context,
+          initial: _reminders ?? mine,
+          allowDefault: true,
+          initiallyDefault: _reminders == null,
+          defaultText: describeReminders(mine),
+        );
+        if (r != null) setState(() => _reminders = r.useDefault ? null : r.offsets);
+      },
+    );
+  }
   static DateTime _nextSlot() {
     final n = DateTime.now().add(const Duration(hours: 1));
     return DateTime(n.year, n.month, n.day, n.hour, n.minute < 30 ? 30 : 0).add(Duration(hours: n.minute < 30 ? 0 : 1));
@@ -122,6 +156,8 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       if (_priority != a.priority) 'priority': _priority,
       if (_notes.text.trim() != (a.description ?? '')) 'description': _notes.text.trim(),
       if (_location.text.trim() != (a.location ?? '')) 'location': _location.text.trim(),
+      if ((_reminders ?? const []).join(',') != (a.reminderOffsets ?? const []).join(','))
+        'reminder_offsets': _reminders == null ? '' : _reminders!.join(','),
       if (_party!.id != a.party?.id || _party!.doctype != a.party?.doctype) ...{
         'reference_doctype': _party!.doctype,
         'reference_name': _party!.id,
@@ -165,12 +201,12 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         'reference_doctype': _party!.doctype,
         'reference_name': _party!.id,
         'start': Repository.iso(_start),
-        // Follow-ups are a point in time (a short 15-min slot); meetings use the chosen duration.
-        'end': Repository.iso(_start.add(Duration(minutes: _type == 'Meeting' ? _minutes : 15))),
+        'end': Repository.iso(_start.add(Duration(minutes: _minutes))),
         'priority': _priority,
         'description': _notes.text.trim().isEmpty ? null : _notes.text.trim(),
         'location': _location.text.trim().isEmpty ? null : _location.text.trim(),
         'idempotency_key': _idempotencyKey,
+        if (_reminders != null) 'reminder_offsets': _reminders!.join(','),
       });
       bumpRefresh();
       if (!mounted) return;
@@ -229,7 +265,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
           ),
         ]),
         const SizedBox(height: 12),
-        if (_type == 'Meeting') DropdownButtonFormField<int>(
+        DropdownButtonFormField<int>(
           initialValue: _customMinutes ?? _minutes,
           decoration: const InputDecoration(labelText: 'Duration'),
           items: [if (_customMinutes != null) _customMinutes!, 15, 30, 45, 60, 90, 120]
@@ -247,6 +283,14 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
           items: const ['Low', 'Medium', 'High'].map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
           onChanged: (v) => setState(() => _priority = v ?? 'Medium'),
         ),
+        if (_priority == 'High')
+          const Padding(
+            padding: EdgeInsets.only(top: 6, left: 4),
+            child: Text('High priority reminders ring like an alarm (can be turned off in Settings).',
+                style: TextStyle(fontSize: 12.5)),
+          ),
+        const SizedBox(height: 12),
+        _remindersTile(),
         if (_type == 'Meeting') ...[
           const SizedBox(height: 12),
           TextField(controller: _location, decoration: const InputDecoration(labelText: 'Location (optional)')),

@@ -12,6 +12,7 @@ import '../../app/nav.dart';
 import '../../shared/models/models.dart';
 import '../api/api_client.dart';
 import '../cache/cache_store.dart';
+import 'alarm.dart';
 import 'firebase_options.dart';
 
 const appVersion = '0.1.0';
@@ -73,12 +74,26 @@ class NotificationService {
         iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true, presentBadge: true),
       );
 
+  /// 15 -> "in 15 min", 60 -> "in 1 h", 1440 -> "tomorrow" (same wording as the server).
+  static String beforeLabel(int m) {
+    if (m % 1440 == 0) return m == 1440 ? 'tomorrow' : 'in ${m ~/ 1440} days';
+    if (m >= 60 && m % 60 == 0) return 'in ${m ~/ 60} h';
+    return 'in $m min';
+  }
+
+  /// Rings the High priority alarm once now, so people can hear what it sounds like.
+  Future<void> testAlarm() => showAlarmFromData(_local, {
+        'notification_id': 'test',
+        'title': 'Test alarm · High priority follow-up',
+        'body': 'This is how High priority reminders ring. Tap or swipe to stop.',
+      });
+
   /// Text of a phone-side reminder: who, what, when and the notes (like the server push).
   static (String, String) reminderText(Activity a, int minutesBefore) {
     final kind = a.activityType.toLowerCase();
     final who = a.party?.name;
     final head = minutesBefore > 0
-        ? 'Upcoming $kind in $minutesBefore min'
+        ? 'Upcoming $kind ${beforeLabel(minutesBefore)}'
         : '${kind[0].toUpperCase()}${kind.substring(1)} now';
     final title = who == null || who.isEmpty ? head : '$head · $who';
     String clip(String t, int n) {
@@ -117,6 +132,7 @@ class NotificationService {
         playSound: true,
         enableVibration: true,
       ));
+      await _android?.createNotificationChannel(alarmChannel());
       try {
         await _android?.deleteNotificationChannel(channelId: _oldChannelId);
       } catch (_) {}
@@ -136,6 +152,7 @@ class NotificationService {
       firebaseReady = false; // google-services.json / GoogleService-Info.plist not configured
     }
     if (firebaseReady) {
+      FirebaseMessaging.onBackgroundMessage(hipersignBackgroundMessage); // alarm pushes while closed
       final fm = FirebaseMessaging.instance;
       await fm.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
       FirebaseMessaging.onMessage.listen(_onForegroundMessage);
@@ -151,6 +168,10 @@ class NotificationService {
   void _onForegroundMessage(RemoteMessage m) {
     // iOS shows foreground pushes itself (presentation options above).
     if (!Platform.isAndroid) return;
+    if (m.data['alarm'] == '1') {
+      showAlarmFromData(_local, Map<String, dynamic>.from(m.data));
+      return;
+    }
     final n = m.notification;
     if (n == null) return;
     _local.show(
@@ -273,7 +294,7 @@ class NotificationService {
 
   // ------------------------------------------------------------ local reminders
 
-  int _idFor(String activityId) => 100000 + ((int.tryParse(activityId) ?? activityId.hashCode) & 0x0fffffff);
+  int _idFor(String activityId) => 100000 + ((int.tryParse(activityId) ?? activityId.hashCode) & 0x07ffffff);
 
   Future<void> cancelLocalReminders() async {
     final store = await CacheStore.instance();
@@ -288,7 +309,12 @@ class NotificationService {
 
   /// Re-plans phone-side reminders from the latest synced schedule. Called after
   /// each calendar sync, so rescheduled / completed work never fires a stale alert.
-  Future<void> syncLocalReminders(List<Activity> activities, {required int minutesBefore, required bool enabled}) async {
+  Future<void> syncLocalReminders(
+    List<Activity> activities, {
+    required List<int> offsets,
+    required bool enabled,
+    bool alarmHighPriority = true,
+  }) async {
     await cancelLocalReminders();
     if (!enabled) return;
     final now = DateTime.now();
@@ -299,24 +325,27 @@ class NotificationService {
     final exact = await canScheduleExact();
     final ids = <int>[];
     for (final a in upcoming.take(30)) {
-      // One N minutes before, and one again at the exact start time.
-      for (final (offset, idBase) in [(minutesBefore, _idFor(a.id)), (0, _idFor(a.id) + 0x10000000)]) {
-        if (offset == minutesBefore && offset == 0 && idBase != _idFor(a.id)) continue;
+      final own = a.reminderOffsets;
+      final times = (own != null && own.isNotEmpty) ? own : offsets;
+      final alarm = alarmHighPriority && (a.priority == 'High' || a.priority == 'Urgent');
+      for (final (i, offset) in times.take(5).indexed) {
         final at = a.start!.subtract(Duration(minutes: offset));
         if (!at.isAfter(now.add(const Duration(seconds: 30)))) continue;
+        final id = _idFor(a.id) + i * 0x08000000;
         try {
           final (title, body) = reminderText(a, offset);
           await _local.zonedSchedule(
-            id: idBase,
+            id: id,
             title: title,
             body: body,
             scheduledDate: tz.TZDateTime.from(at.toUtc(), tz.UTC),
-            notificationDetails: _expandable(body),
-            androidScheduleMode:
-                exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
+            notificationDetails: alarm ? alarmDetails(body) : _expandable(body),
+            androidScheduleMode: alarm
+                ? AndroidScheduleMode.alarmClock
+                : (exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle),
             payload: '/activity/${a.id}',
           );
-          ids.add(idBase);
+          ids.add(id);
         } catch (_) {
           // Permission denied or OS limit reached: skip quietly; server push still applies.
         }

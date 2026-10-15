@@ -12,6 +12,7 @@ import '../../core/notifications/notification_service.dart';
 import '../../core/notifications/reminder_planner.dart';
 import '../../core/phone/direct_call.dart';
 import '../../core/updates/update_service.dart';
+import '../../shared/widgets/reminder_picker.dart';
 import '../recordings/recordings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -48,6 +49,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final p = await session.repo.preferences();
       await session.cache.setPref(reminderMinutesPref, '${p['reminder_minutes']}');
+      if (p['reminder_offsets'] is List) {
+        await session.cache.setPref(reminderOffsetsPref, (p['reminder_offsets'] as List).join(','));
+      }
+      if (p['alarm_high_priority'] != null) {
+        await session.cache.setPref(alarmHighPref, p['alarm_high_priority'] == true ? '1' : '0');
+      }
       if (mounted) setState(() => _prefs = p);
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e);
@@ -59,9 +66,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final before = Map<String, dynamic>.from(_prefs ?? {});
     setState(() => _prefs = {...?_prefs, ...change});
     try {
-      await session.repo.savePreferences(change);
+      await session.repo.savePreferences({
+        for (final e in change.entries)
+          if (!e.key.endsWith('_list')) e.key: e.value,
+      });
       if (change.containsKey('reminder_minutes')) {
         await session.cache.setPref(reminderMinutesPref, '${change['reminder_minutes']}');
+      }
+      if (change.containsKey('reminder_offsets')) {
+        await session.cache.setPref(reminderOffsetsPref, change['reminder_offsets'].toString());
+      }
+      if (change.containsKey('alarm_high_priority')) {
+        await session.cache.setPref(alarmHighPref, change['alarm_high_priority'] == true ? '1' : '0');
+      }
+      if (change.keys.any((k) => k.startsWith('reminder') || k == 'alarm_high_priority')) {
         await planLocalReminders(session.repo);
       }
       showSnack('Saved');
@@ -69,6 +87,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) setState(() => _prefs = before); // never show a change the server didn't accept
       showSnack(e.message, error: true);
     }
+  }
+
+  List<int> _offsets(Map<String, dynamic> p) {
+    final l = p['reminder_offsets_list'] ?? p['reminder_offsets'];
+    if (l is List) return l.map((e) => (e as num).toInt()).toList();
+    if (l is String) return parseOffsets(l);
+    final m = (p['reminder_minutes'] as num?)?.toInt() ?? 15;
+    return {m, 0}.toList();
   }
 
   @override
@@ -140,17 +166,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (v) => _save({'notify_trials': v}),
             ),
             ListTile(
+              leading: const Icon(Icons.alarm_outlined),
               title: const Text('Remind me'),
-              trailing: DropdownButton<int>(
-                value: (p['reminder_minutes'] as num?)?.toInt() ?? 15,
-                underline: const SizedBox(),
-                items: [
-                  for (final m in ((p['reminder_choices'] as List?) ?? const [0, 5, 10, 15, 30, 60, 120]).map((e) => (e as num).toInt()))
-                    DropdownMenuItem(value: m, child: Text(m == 0 ? 'At start time' : (m < 60 ? '$m min before' : '${m ~/ 60} h before'))),
-                ],
-                onChanged: (v) {
-                  if (v != null) _save({'reminder_minutes': v});
-                },
+              subtitle: Text(describeReminders(_offsets(p))),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                final r = await pickReminders(context, initial: _offsets(p));
+                if (r != null && r.offsets.isNotEmpty) {
+                  _save({'reminder_offsets': r.offsets.join(','), 'reminder_offsets_list': r.offsets});
+                }
+              },
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.notifications_active_outlined, color: HsColors.danger),
+              title: const Text('High priority rings like an alarm'),
+              subtitle: const Text('Alarm sound and vibration that keep going until you open or swipe it'),
+              value: p['alarm_high_priority'] != false,
+              onChanged: (v) => _save({'alarm_high_priority': v}),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.volume_up_outlined, size: 18),
+                  label: const Text('Test the alarm'),
+                  onPressed: () => NotificationService.instance.testAlarm(),
+                ),
               ),
             ),
           ]),

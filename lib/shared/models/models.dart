@@ -141,6 +141,7 @@ class Activity {
     this.trialBooking,
     this.party,
     this.history = const [],
+    this.reminderOffsets,
   });
 
   final String id;
@@ -162,6 +163,7 @@ class Activity {
   final String? trialBooking;
   final Party? party;
   final List<HistoryEntry> history;
+  final List<int>? reminderOffsets; // own reminders (minutes before); null = my reminder setting
 
   bool get isOpen => status == 'Pending' || status == 'In Progress' || status == 'Rescheduled';
 
@@ -187,6 +189,9 @@ class Activity {
         history: ((j['history'] as List?) ?? const [])
             .map((e) => HistoryEntry.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
+        reminderOffsets: j['reminder_offsets'] is List
+            ? (j['reminder_offsets'] as List).map((e) => (e as num).toInt()).toList()
+            : null,
       );
 }
 
