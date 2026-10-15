@@ -18,11 +18,24 @@ Future<void> openActivityForm(BuildContext context, {required String type, Party
   );
 }
 
+/// Edit an open follow-up / meeting. Returns true when it was saved.
+Future<bool> openActivityEdit(BuildContext context, Activity activity) async {
+  final saved = await Navigator.push<bool>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ActivityFormScreen(type: activity.activityType, party: activity.party, existing: activity),
+      fullscreenDialog: true,
+    ),
+  );
+  return saved == true;
+}
+
 class ActivityFormScreen extends StatefulWidget {
-  const ActivityFormScreen({super.key, required this.type, this.party});
+  const ActivityFormScreen({super.key, required this.type, this.party, this.existing});
 
   final String type;
   final Party? party;
+  final Activity? existing; // edit mode
 
   @override
   State<ActivityFormScreen> createState() => _ActivityFormScreenState();
@@ -42,6 +55,28 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   /// Generated once per form, so "Try again" after a timeout can never create a duplicate.
   final String _idempotencyKey = randomKey(16);
 
+  Activity? get _existing => widget.existing;
+  bool get _editing => _existing != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final a = _existing;
+    if (a != null) {
+      _title.text = a.title;
+      _notes.text = a.description ?? '';
+      _location.text = a.location ?? '';
+      if (a.start != null) _start = a.start!;
+      if (a.start != null && a.end != null) {
+        final m = a.end!.difference(a.start!).inMinutes;
+        _minutes = const [15, 30, 45, 60, 90, 120].contains(m) ? m : 30;
+        if (!const [15, 30, 45, 60, 90, 120].contains(m)) _customMinutes = m;
+      }
+      _priority = const ['Low', 'Medium', 'High'].contains(a.priority) ? a.priority : 'Medium';
+    }
+  }
+
+  int? _customMinutes; // an existing duration that isn't in the list
   static DateTime _nextSlot() {
     final n = DateTime.now().add(const Duration(hours: 1));
     return DateTime(n.year, n.month, n.day, n.hour, n.minute < 30 ? 30 : 0).add(Duration(hours: n.minute < 30 ? 0 : 1));
@@ -60,7 +95,9 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     final d = await showDatePicker(
       context: context,
       initialDate: _start,
-      firstDate: DateTime(now.year, now.month, now.day),
+      firstDate: _start.isBefore(DateTime(now.year, now.month, now.day))
+          ? DateTime(_start.year, _start.month, _start.day)
+          : DateTime(now.year, now.month, now.day),
       lastDate: now.add(const Duration(days: 365)),
     );
     if (d != null) setState(() => _start = DateTime(d.year, d.month, d.day, _start.hour, _start.minute));
@@ -71,7 +108,49 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     if (t != null) setState(() => _start = DateTime(_start.year, _start.month, _start.day, t.hour, t.minute));
   }
 
+  Future<void> _saveEdit() async {
+    final a = _existing!;
+    if (_party == null) {
+      _snack('Choose a customer or lead.');
+      return;
+    }
+    final title = _title.text.trim().isEmpty ? '$_type - ${_party!.name}' : _title.text.trim();
+    final minutes = _customMinutes ?? _minutes;
+    final values = <String, dynamic>{
+      if (title != a.title) 'title': title,
+      if (_type != a.activityType && a.activityType != 'Trial') 'activity_type': _type,
+      if (_priority != a.priority) 'priority': _priority,
+      if (_notes.text.trim() != (a.description ?? '')) 'description': _notes.text.trim(),
+      if (_location.text.trim() != (a.location ?? '')) 'location': _location.text.trim(),
+      if (_party!.id != a.party?.id || _party!.doctype != a.party?.doctype) ...{
+        'reference_doctype': _party!.doctype,
+        'reference_name': _party!.id,
+      },
+      if (a.start == null || _start != a.start || (a.end != null && a.end!.difference(a.start!).inMinutes != minutes)) ...{
+        'start': Repository.iso(_start),
+        'end': Repository.iso(_start.add(Duration(minutes: minutes))),
+      },
+    };
+    if (values.isEmpty) {
+      Navigator.pop(context, false);
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await context.read<SessionController>().repo.updateActivity(a.id, values);
+      bumpRefresh();
+      if (!mounted) return;
+      showSnack('Saved to ERP');
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      _snack(e.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _save() async {
+    if (_editing) return _saveEdit();
     if (_party == null) {
       _snack('Choose a customer or lead.');
       return;
@@ -109,13 +188,13 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('New ${_type.toLowerCase()}'),
+        title: Text(_editing ? 'Edit ${_type.toLowerCase()}' : 'New ${_type.toLowerCase()}'),
         actions: [
           TextButton(onPressed: _saving ? null : _save, child: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Save')),
         ],
       ),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        SegmentedButton<String>(
+        if (_type != 'Trial') SegmentedButton<String>(
           segments: const [
             ButtonSegment(value: 'Follow-up', label: Text('Follow-up'), icon: Icon(Icons.phone_callback_outlined)),
             ButtonSegment(value: 'Meeting', label: Text('Meeting'), icon: Icon(Icons.groups_2_outlined)),
@@ -150,12 +229,15 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         ]),
         const SizedBox(height: 12),
         DropdownButtonFormField<int>(
-          initialValue: _minutes,
+          initialValue: _customMinutes ?? _minutes,
           decoration: const InputDecoration(labelText: 'Duration'),
-          items: const [15, 30, 45, 60, 90, 120]
+          items: [if (_customMinutes != null) _customMinutes!, 15, 30, 45, 60, 90, 120]
               .map((m) => DropdownMenuItem(value: m, child: Text(m < 60 ? '$m min' : '${m / 60} h'.replaceAll('.0', ''))))
               .toList(),
-          onChanged: (v) => setState(() => _minutes = v ?? 30),
+          onChanged: (v) => setState(() {
+            _minutes = v ?? 30;
+            _customMinutes = null;
+          }),
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(

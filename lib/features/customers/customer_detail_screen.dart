@@ -20,6 +20,7 @@ import '../notes/notes.dart';
 import '../recordings/recording_widgets.dart';
 import '../recordings/recordings_screen.dart';
 import '../trials/book_trial_screen.dart';
+import 'edit_party_screen.dart';
 
 class CustomerDetailScreen extends StatefulWidget {
   const CustomerDetailScreen({super.key, required this.doctype, required this.name, required this.title});
@@ -161,7 +162,19 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     final p = _party;
     final profile = context.read<SessionController>().profile!;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        title: Text(p?.name ?? widget.title),
+        actions: [
+          if (p != null)
+            IconButton(
+              tooltip: 'Edit',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () async {
+                if (await openEditParty(context, p)) _load();
+              },
+            ),
+        ],
+      ),
       body: p == null
           ? (_loading
               ? const Center(child: CircularProgressIndicator())

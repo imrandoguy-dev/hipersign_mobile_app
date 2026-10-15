@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:intl/intl.dart';
@@ -114,6 +115,12 @@ class Repository {
 
   Future<Activity> createActivity(Map<String, dynamic> payload) async {
     final data = await api.post('activities.create_activity', payload);
+    return Activity.fromJson(Map<String, dynamic>.from((data as Map)['activity'] as Map));
+  }
+
+  /// Edit an open follow-up / meeting. Only the keys given are changed.
+  Future<Activity> updateActivity(String id, Map<String, dynamic> values) async {
+    final data = await api.post('activities.update_activity', {'activity_id': id, ...values});
     return Activity.fromJson(Map<String, dynamic>.from((data as Map)['activity'] as Map));
   }
 
@@ -264,6 +271,15 @@ class Repository {
   }
 
   /// Work calls from the phone's call history -> ERPNext call log (Calling Activity report).
+  /// Editable fields of a customer / lead / deal (decided by the server).
+  Future<List<EditField>> editForm(String doctype, String name) async {
+    final data = Map<String, dynamic>.from(await api.get('customers.edit_form', {'doctype': doctype, 'name': name}) as Map);
+    return ((data['fields'] as List?) ?? const []).map((e) => EditField.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  Future<void> updateParty(String doctype, String name, Map<String, dynamic> values) =>
+      api.post('customers.update_party', {'doctype': doctype, 'name': name, 'values': jsonEncode(values)});
+
   Future<Map<String, dynamic>> syncCalls(List<Map<String, dynamic>> calls) async =>
       Map<String, dynamic>.from(await api.post('calls.sync', {'calls': calls}) as Map);
 

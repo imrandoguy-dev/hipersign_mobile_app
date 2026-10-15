@@ -13,6 +13,7 @@ import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../customers/customer_detail_screen.dart';
 import '../trials/trial_detail_screen.dart';
+import 'activity_form.dart';
 
 class ActivityDetailScreen extends StatefulWidget {
   const ActivityDetailScreen({super.key, required this.activityId});
@@ -191,7 +192,19 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
   Widget build(BuildContext context) {
     final a = _a;
     return Scaffold(
-      appBar: AppBar(title: Text(a?.activityType ?? 'Activity')),
+      appBar: AppBar(
+        title: Text(a?.activityType ?? 'Activity'),
+        actions: [
+          if (a != null && a.isOpen && a.trialBooking == null)
+            IconButton(
+              tooltip: 'Edit',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () async {
+                if (await openActivityEdit(context, a)) _load();
+              },
+            ),
+        ],
+      ),
       body: a == null
           ? (_loading
               ? const Center(child: CircularProgressIndicator())

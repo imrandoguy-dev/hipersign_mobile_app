@@ -472,3 +472,33 @@ class Note {
         fromLead: partyDoctype == 'CRM Deal' && j['reference_doctype'] == 'CRM Lead',
       );
 }
+
+
+/// One field of the server-defined edit form for a customer / lead / deal.
+class EditField {
+  EditField({required this.key, required this.label, required this.type, this.value, this.options = const [], this.required = false, this.showIfKey, this.showIfValues = const []});
+
+  final String key;
+  final String label;
+  final String type; // text | phone | email | select | multiline | number | date
+  final String? value;
+  final List<String> options;
+  final bool required;
+  final String? showIfKey; // only shown when that field has one of showIfValues
+  final List<String> showIfValues;
+
+  factory EditField.fromJson(Map<String, dynamic> j) {
+    final show = j['show_if'] is Map ? Map<String, dynamic>.from(j['show_if'] as Map) : null;
+    final v = j['value'];
+    return EditField(
+      key: j['key'].toString(),
+      label: j['label']?.toString() ?? j['key'].toString(),
+      type: j['type']?.toString() ?? 'text',
+      value: v == null ? null : (v is double && v == v.roundToDouble() ? v.toInt().toString() : v.toString()),
+      options: ((j['options'] as List?) ?? const []).map((e) => e.toString()).toList(),
+      required: j['required'] == true,
+      showIfKey: show?['key']?.toString(),
+      showIfValues: ((show?['in'] as List?) ?? const []).map((e) => e.toString()).toList(),
+    );
+  }
+}
