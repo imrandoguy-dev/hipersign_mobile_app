@@ -52,6 +52,39 @@ class NotificationService {
     iOS: DarwinNotificationDetails(presentAlert: true, presentSound: true, presentBadge: true),
   );
 
+  /// Same channel, but the whole multi-line text (customer, notes...) shows when expanded.
+  static NotificationDetails _expandable(String body) => NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          'Hipersign alerts',
+          channelDescription: 'Assignments, reminders and trial updates',
+          importance: Importance.high,
+          priority: Priority.high,
+          styleInformation: BigTextStyleInformation(body),
+        ),
+        iOS: const DarwinNotificationDetails(presentAlert: true, presentSound: true, presentBadge: true),
+      );
+
+  /// Text of a phone-side reminder: who, what, when and the notes (like the server push).
+  static (String, String) reminderText(Activity a, int minutesBefore) {
+    final kind = a.activityType.toLowerCase();
+    final who = a.party?.name;
+    final head = 'Upcoming $kind ${minutesBefore > 0 ? 'in $minutesBefore min' : 'now'}';
+    final title = who == null || who.isEmpty ? head : '$head · $who';
+    String clip(String t, int n) {
+      final s = t.replaceAll(RegExp(r'\s+'), ' ').trim();
+      return s.length > n ? '${s.substring(0, n - 1)}…' : s;
+    }
+
+    final lines = <String>[
+      '${DateFormat('d MMM, h:mm a').format(a.start!)} · ${clip(a.title, 120)}',
+      if ((a.location ?? '').trim().isNotEmpty) 'Place: ${clip(a.location!, 100)}',
+      if ((a.description ?? '').trim().isNotEmpty && a.description!.trim() != a.title.trim())
+        'Notes: ${clip(a.description!.replaceAll(RegExp(r'<[^>]+>'), ' '), 300)}',
+    ];
+    return (title, lines.join('\n'));
+  }
+
   Future<void> init() async {
     tzdata.initializeTimeZones();
     try {
@@ -109,7 +142,7 @@ class NotificationService {
       id: DateTime.now().millisecondsSinceEpoch & 0x3fffffff,
       title: n.title,
       body: n.body,
-      notificationDetails: _details,
+      notificationDetails: n.body == null ? _details : _expandable(n.body!),
       payload: m.data['route']?.toString(),
     );
   }
@@ -255,12 +288,13 @@ class NotificationService {
       if (!at.isAfter(now.add(const Duration(seconds: 30)))) continue;
       final id = _idFor(a.id);
       try {
+        final (title, body) = reminderText(a, minutesBefore);
         await _local.zonedSchedule(
           id: id,
-          title: 'Upcoming ${a.activityType.toLowerCase()}',
-          body: 'Starts at ${DateFormat.jm().format(a.start!)}. Tap to open.',
+          title: title,
+          body: body,
           scheduledDate: tz.TZDateTime.from(at.toUtc(), tz.UTC),
-          notificationDetails: _details,
+          notificationDetails: _expandable(body),
           androidScheduleMode: exact ? AndroidScheduleMode.exactAllowWhileIdle : AndroidScheduleMode.inexactAllowWhileIdle,
           payload: '/activity/${a.id}',
         );
