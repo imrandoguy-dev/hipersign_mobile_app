@@ -216,15 +216,41 @@ class Repository {
         .toList();
   }
 
-  Future<Booking> book({required String slotId, String? customer, String? lead, required String bookingType, String? notes, required String idempotencyKey}) async {
-    final data = await api.post('trials.book_trial', {
+  /// Books the trial: the chosen session, plus (for a multi-day trial) the same time on each
+  /// following day the trainer works. Returns the booking and the days that couldn't be booked.
+  Future<(Booking, List<Map<String, dynamic>>)> book({
+    required String slotId,
+    String? customer,
+    String? lead,
+    required String bookingType,
+    String? notes,
+    required String idempotencyKey,
+    int trialDays = 1,
+  }) async {
+    final data = Map<String, dynamic>.from(await api.post('trials.book_trial', {
       'trainer_slot': slotId,
       'customer': customer,
       'lead': lead,
       'booking_type': bookingType,
       'notes': notes,
       'idempotency_key': idempotencyKey,
+      'trial_days': trialDays,
+    }) as Map);
+    final skipped = ((data['skipped'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return (Booking.fromJson(Map<String, dynamic>.from(data['booking'] as Map)), skipped);
+  }
+
+  Future<Booking> addTrialSession(String bookingId, String slotId, String idempotencyKey) async {
+    final data = await api.post('trials.add_trial_session', {
+      'booking_id': bookingId,
+      'trainer_slot': slotId,
+      'idempotency_key': idempotencyKey,
     });
+    return Booking.fromJson(Map<String, dynamic>.from((data as Map)['booking'] as Map));
+  }
+
+  Future<Booking> setTrialDays(String bookingId, int days) async {
+    final data = await api.post('trials.set_trial_days', {'booking_id': bookingId, 'days': days});
     return Booking.fromJson(Map<String, dynamic>.from((data as Map)['booking'] as Map));
   }
 

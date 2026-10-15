@@ -10,6 +10,13 @@ import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../activities/activity_detail_screen.dart';
 import 'slot_picker.dart';
+import 'trial_widgets.dart';
+
+/// Holder so the sheet's selection survives rebuilds.
+class TrialSlotChoice {
+  TrialSlotChoice(this.slot);
+  final TrainerSlot slot;
+}
 
 class TrialDetailScreen extends StatefulWidget {
   const TrialDetailScreen({super.key, required this.bookingId});
@@ -119,6 +126,104 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
     }
   }
 
+  Future<void> _changeDays() async {
+    final b = _b!;
+    final n = await TrialDaysPicker.askNumber(context, b.trial?.days ?? 1);
+    if (n == null || !mounted) return;
+    final repo = context.read<SessionController>().repo;
+    final updated = await runWrite(context, () => repo.setTrialDays(b.id, n), success: 'Trial is now $n days');
+    if (updated != null) {
+      bumpRefresh();
+      setState(() => _b = updated);
+    }
+  }
+
+  Future<void> _addSession() async {
+    final b = _b!;
+    TrialSlotChoice? picked;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.85,
+          builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
+            const Text('Add a session', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            SlotPicker(
+              bookingType: b.bookingType,
+              selectedId: picked?.slot.id,
+              onPick: (s) => setSheet(() => picked = TrialSlotChoice(s)),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: picked == null ? null : () => Navigator.pop(ctx, true),
+              child: Text(picked == null ? 'Pick a slot' : 'Add ${fmtDayTime(picked!.slot.start)}'),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (ok != true || picked == null || !mounted) return;
+    final repo = context.read<SessionController>().repo;
+    final updated = await runWrite(
+      context,
+      () => repo.addTrialSession(b.trial?.series ?? b.id, picked!.slot.id, randomKey(16)),
+      success: 'Session added',
+    );
+    if (updated != null) {
+      bumpRefresh();
+      _load();
+    }
+  }
+
+  List<Widget> _trialSection(Booking b) {
+    final t = b.trial;
+    if (t == null) return const [];
+    return [
+      const SizedBox(height: 12),
+      TrialCountdown(trial: t),
+      const SizedBox(height: 8),
+      Row(children: [
+        Text('Sessions (${t.sessions.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        const Spacer(),
+        TextButton.icon(onPressed: _changeDays, icon: const Icon(Icons.edit_calendar_outlined, size: 18), label: Text('${t.days} days')),
+      ]),
+      for (final s in t.sessions)
+        Card(
+          margin: const EdgeInsets.only(bottom: 6),
+          color: s.id == b.id ? HsColors.cardHigh : HsColors.card,
+          elevation: 0,
+          child: ListTile(
+            dense: true,
+            leading: CircleAvatar(
+              radius: 14,
+              backgroundColor: s.status == 'Completed'
+                  ? HsColors.completed
+                  : (s.status == 'Cancelled' ? HsColors.cancelled : HsColors.active),
+              child: Text(s.sessionNo == null || s.sessionNo == 0 ? '–' : '${s.sessionNo}',
+                  style: const TextStyle(fontSize: 12, color: HsColors.onPastel)),
+            ),
+            title: Text('${relativeDay(s.start ?? DateTime.now())}, ${fmtTime(s.start)}'),
+            subtitle: Text(s.status),
+            trailing: s.id == b.id ? const Text('this one') : const Icon(Icons.chevron_right),
+            onTap: s.id == b.id
+                ? null
+                : () async {
+                    await Navigator.push(context, MaterialPageRoute(builder: (_) => TrialDetailScreen(bookingId: s.id)));
+                    _load();
+                  },
+          ),
+        ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(onPressed: _addSession, icon: const Icon(Icons.add), label: const Text('Add session')),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final b = _b;
@@ -167,6 +272,7 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
                       ContactButtons(phone: b.party!.primaryPhone, party: b.party),
                     ]),
                   ),
+                ..._trialSection(b),
                 if (b.notes != null) ...[const SizedBox(height: 12), Text('Notes: ${b.notes}')],
                 if (b.cancellationReason != null) ...[const SizedBox(height: 8), Text('Cancelled: ${b.cancellationReason}')],
                 if (b.completionNotes != null) ...[const SizedBox(height: 8), Text('Result: ${b.completionNotes}')],

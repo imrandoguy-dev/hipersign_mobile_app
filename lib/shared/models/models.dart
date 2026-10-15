@@ -233,6 +233,7 @@ class Booking {
     this.notes,
     this.cancellationReason,
     this.completionNotes,
+    this.trial,
   });
 
   final String id;
@@ -247,6 +248,7 @@ class Booking {
   final String? notes;
   final String? cancellationReason;
   final String? completionNotes;
+  final TrialPeriod? trial; // the multi-day trial this session belongs to
 
   bool get isActive => status == 'Booked' || status == 'Rescheduled' || status == 'Pending Confirmation';
 
@@ -270,6 +272,78 @@ class Booking {
         notes: str(j['notes']),
         cancellationReason: str(j['cancellation_reason']),
         completionNotes: str(j['completion_notes']),
+        trial: j['trial'] is Map ? TrialPeriod.fromJson(Map<String, dynamic>.from(j['trial'] as Map)) : null,
+      );
+}
+
+/// A trial of N calendar days and its sessions, with the countdown.
+class TrialPeriod {
+  TrialPeriod({
+    required this.series,
+    required this.days,
+    required this.startDate,
+    required this.endDate,
+    required this.phase,
+    required this.dayNo,
+    required this.daysLeft,
+    required this.startsIn,
+    required this.sessions,
+    required this.sessionsDone,
+  });
+
+  final String series; // id of the trial's first session
+  final int days;
+  final DateTime startDate;
+  final DateTime endDate;
+  final String phase; // upcoming | running | ended
+  final int dayNo;
+  final int daysLeft;
+  final int startsIn;
+  final List<TrialSession> sessions;
+  final int sessionsDone;
+
+  bool get isMultiDay => days > 1 || sessions.length > 1;
+
+  /// "Day 3 of 7 · 4 days left", "Starts tomorrow · 7-day trial", "Trial ended".
+  String get countdown => switch (phase) {
+        'upcoming' => '${startsIn <= 1 ? 'Starts tomorrow' : 'Starts in $startsIn days'} · $days-day trial',
+        'ended' => 'Trial ended · $days days',
+        _ => daysLeft == 0
+            ? 'Day $dayNo of $days · last day today'
+            : 'Day $dayNo of $days · $daysLeft day${daysLeft == 1 ? '' : 's'} left',
+      };
+
+  factory TrialPeriod.fromJson(Map<String, dynamic> j) => TrialPeriod(
+        series: j['series'].toString(),
+        days: (j['days'] as num?)?.toInt() ?? 1,
+        startDate: DateTime.parse(j['start_date'].toString()),
+        endDate: DateTime.parse(j['end_date'].toString()),
+        phase: j['phase']?.toString() ?? 'running',
+        dayNo: (j['day_no'] as num?)?.toInt() ?? 0,
+        daysLeft: (j['days_left'] as num?)?.toInt() ?? 0,
+        startsIn: (j['starts_in'] as num?)?.toInt() ?? 0,
+        sessions: ((j['sessions'] as List?) ?? const [])
+            .map((e) => TrialSession.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+        sessionsDone: (j['sessions_done'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class TrialSession {
+  TrialSession({required this.id, required this.status, this.sessionNo, this.start, this.end});
+
+  final String id;
+  final String status;
+  final int? sessionNo;
+  final DateTime? start;
+  final DateTime? end;
+
+  factory TrialSession.fromJson(Map<String, dynamic> j) => TrialSession(
+        id: j['id'].toString(),
+        status: j['status']?.toString() ?? '',
+        sessionNo: (j['session_no'] as num?)?.toInt(),
+        start: parseDate(j['start']),
+        end: parseDate(j['end']),
       );
 }
 

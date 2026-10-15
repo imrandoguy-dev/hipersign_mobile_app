@@ -10,6 +10,7 @@ import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import 'book_trial_screen.dart';
 import 'trial_detail_screen.dart';
+import 'trial_widgets.dart';
 
 class TrialsScreen extends StatefulWidget {
   const TrialsScreen({super.key});
@@ -147,7 +148,12 @@ class BookingCard extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(b.partyName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
-                    Text('${fmtDayTime(b.start)} - with ${b.trainerName ?? 'trainer'}', style: const TextStyle(fontSize: 13)),
+                    Text('${relativeDay(b.start ?? DateTime.now())}, ${fmtTime(b.start)} - with ${b.trainerName ?? 'trainer'}',
+                        style: const TextStyle(fontSize: 13)),
+                    if (b.trial != null && b.trial!.isMultiDay) ...[
+                      const SizedBox(height: 6),
+                      TrialCountdown(trial: b.trial!, compact: true),
+                    ],
                   ]),
                 ),
               ),
