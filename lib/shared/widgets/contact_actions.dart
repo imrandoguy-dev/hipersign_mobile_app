@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/nav.dart';
 import '../../app/theme.dart';
+import '../../core/auth/session.dart';
 import '../../core/phone/direct_call.dart';
 import '../../core/recordings/recording_service.dart';
 import '../models/models.dart';
@@ -49,6 +51,24 @@ Future<void> openWhatsApp(PhoneInfo? phone, {void Function()? onLaunched}) async
   }
 }
 
+/// WhatsApp chats inside Hipersign (when the server has them switched on for this user).
+bool hasInAppWhatsApp(BuildContext context) {
+  try {
+    return context.read<SessionController>().profile?.can('whatsapp') ?? false;
+  } catch (_) {
+    return false; // no session (e.g. widget tests)
+  }
+}
+
+/// Opens the chat inside Hipersign, or the WhatsApp app when chats aren't available here.
+Future<void> openWhatsAppChat(BuildContext context, PhoneInfo? phone, {void Function()? onLaunched}) async {
+  if (!hasInAppWhatsApp(context) || phone == null || !phone.valid || phone.e164 == null) {
+    return openWhatsApp(phone, onLaunched: onLaunched);
+  }
+  onLaunched?.call();
+  await navigatorKey.currentState?.pushNamed('/whatsapp/${phone.e164!.replaceAll(RegExp(r'\D'), '')}');
+}
+
 class ContactButtons extends StatelessWidget {
   const ContactButtons({
     super.key,
@@ -78,7 +98,9 @@ class ContactButtons extends StatelessWidget {
         icon: Icons.chat,
         color: disabled ? fg.withValues(alpha: 0.35) : HsColors.whatsapp,
         background: bg,
-        onTap: () => openWhatsApp(phone, onLaunched: onWhatsApp),
+        onTap: () => openWhatsAppChat(context, phone, onLaunched: onWhatsApp),
+        // Long press: the phone's own WhatsApp app.
+        onLongPress: () => openWhatsApp(phone, onLaunched: onWhatsApp),
       ),
       const SizedBox(width: 8),
       _RoundIcon(
@@ -93,12 +115,20 @@ class ContactButtons extends StatelessWidget {
 }
 
 class _RoundIcon extends StatelessWidget {
-  const _RoundIcon({required this.icon, required this.color, required this.background, required this.onTap, required this.tooltip});
+  const _RoundIcon({
+    required this.icon,
+    required this.color,
+    required this.background,
+    required this.onTap,
+    required this.tooltip,
+    this.onLongPress,
+  });
 
   final IconData icon;
   final Color color;
   final Color background;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final String tooltip;
 
   @override
@@ -114,6 +144,7 @@ class _RoundIcon extends StatelessWidget {
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onTap,
+            onLongPress: onLongPress,
             child: SizedBox(width: 44, height: 44, child: Icon(icon, color: color, size: 22)),
           ),
         ),

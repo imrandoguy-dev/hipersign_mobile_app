@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -19,6 +21,7 @@ import '../customers/customer_detail_screen.dart';
 import '../customers/customers_screen.dart';
 import '../customers/dialer_sheet.dart';
 import '../trials/book_trial_screen.dart';
+import '../whatsapp/chats_screen.dart';
 import 'more_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -31,6 +34,10 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _tab = 0;
   int _leadsSeen = 0;
+  Timer? _waPoll;
+
+  bool get _hasWhatsApp => context.read<SessionController>().profile?.can('whatsapp') ?? false;
+  int get _customersTab => _hasWhatsApp ? 3 : 2;
 
   @override
   void initState() {
@@ -42,12 +49,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       final pending = notifications.takePendingRoute();
       if (pending != null) navigatorKey.currentState?.pushNamed(pending);
       _checkForUpdate();
+      _refreshWhatsAppBadge();
       _openPhoneLink();
       // One permission prompt at a time: recordings first, then the caller pop-up.
       _syncRecordings(ask: true).whenComplete(() async {
         await askCallerIdOnce();
         await _syncCallerId();
       });
+    });
+    _waPoll = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) _refreshWhatsAppBadge();
     });
     // Phone links, shares from Google and caller pop-up taps while Hipersign is open.
     setNativeHandlers(
@@ -56,6 +67,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       onOpen: _openParty,
       onAfterCall: _showAfterCall,
     );
+  }
+
+  Future<void> _refreshWhatsAppBadge() async {
+    if (!mounted || !_hasWhatsApp) return;
+    try {
+      waUnreadChats.value = await context.read<SessionController>().repo.waUnreadChats();
+    } catch (_) {}
   }
 
   /// Hipersign was opened from a phone link, a share or the caller pop-up.
@@ -82,7 +100,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final ctx = navigatorKey.currentContext ?? context;
     // Close any open dial pad first so the new number is shown.
     Navigator.of(ctx).popUntil((route) => route is! PopupRoute);
-    if (mounted) setState(() => _tab = 2);
+    if (mounted) setState(() => _tab = _customersTab);
     openDialer(ctx, number: number, sharedText: shared);
   }
 
@@ -132,6 +150,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _waPoll?.cancel();
     NotificationService.instance.onOpenRoute = null;
     setNativeHandlers();
     super.dispose();
@@ -146,6 +165,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final session = context.read<SessionController>();
     bumpRefresh();
     _checkForUpdate();
+    _refreshWhatsAppBadge();
     _openPhoneLink();
     _syncCallerId();
     // Refresh roles/features first (FR-005), so call recording sees the server's latest settings.
@@ -209,32 +229,69 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (!profile.workspaces.contains('sales')) {
       return _NoWorkspace(name: profile.fullName);
     }
+    final wa = profile.can('whatsapp');
     final pages = <Widget>[
       const CalendarScreen(),
       const ActivityListScreen(meetings: false),
+      if (wa) const ChatsScreen(),
       const CustomersScreen(),
       const MoreScreen(),
     ];
+    if (_tab >= pages.length) _tab = 0;
+    final onCustomers = _tab == (wa ? 3 : 2);
+    final fab = FloatingActionButton(
+      tooltip: onCustomers ? 'Dial pad' : 'Quick actions',
+      backgroundColor: HsColors.accent,
+      foregroundColor: HsColors.onAccent,
+      shape: const CircleBorder(),
+      onPressed: onCustomers ? () => openDialer(context) : _openQuickActions,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+        child: onCustomers
+            ? const Icon(Icons.dialpad, key: ValueKey('dial'), size: 28)
+            : const Icon(Icons.add, key: ValueKey('add'), size: 30),
+      ),
+    );
+    if (wa) {
+      // Five tabs: the round button floats above the bar on the right.
+      return Scaffold(
+        body: IndexedStack(index: _tab, children: pages),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButton: _tab == 2 ? null : fab, // the chat list has its own "new chat"
+        bottomNavigationBar: BottomAppBar(
+          color: HsColors.background,
+          padding: EdgeInsets.zero,
+          height: 68,
+          child: Row(children: [
+            _NavItem(icon: Icons.calendar_month, label: 'Calendar', selected: _tab == 0, onTap: () => setState(() => _tab = 0)),
+            _NavItem(icon: Icons.checklist_rtl, label: 'Follow-ups', selected: _tab == 1, onTap: () => setState(() => _tab = 1)),
+            Expanded(
+              child: ValueListenableBuilder<int>(
+                valueListenable: waUnreadChats,
+                builder: (context, unread, _) => _NavItem(
+                  icon: Icons.chat_outlined,
+                  label: 'WhatsApp',
+                  badge: unread,
+                  expanded: false,
+                  selected: _tab == 2,
+                  onTap: () => setState(() => _tab = 2),
+                ),
+              ),
+            ),
+            _NavItem(icon: Icons.people_alt_outlined, label: 'Customers', selected: _tab == 3, onTap: () => setState(() => _tab = 3)),
+            _NavItem(icon: Icons.more_horiz, label: 'More', selected: _tab == 4, onTap: () => setState(() => _tab = 4)),
+          ]),
+        ),
+      );
+    }
     // Bar positions: 0 Calendar, 1 Follow-ups, [2 = plus], 3 Customers, 4 More
     final barIndex = _tab >= 2 ? _tab + 1 : _tab;
     return Scaffold(
       body: IndexedStack(index: _tab, children: pages),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       // On the Customers tab the centre button is a dial pad; elsewhere it is "+" (quick actions).
-      floatingActionButton: FloatingActionButton(
-        tooltip: _tab == 2 ? 'Dial pad' : 'Quick actions',
-        backgroundColor: HsColors.accent,
-        foregroundColor: HsColors.onAccent,
-        shape: const CircleBorder(),
-        onPressed: _tab == 2 ? () => openDialer(context) : _openQuickActions,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
-          child: _tab == 2
-              ? const Icon(Icons.dialpad, key: ValueKey('dial'), size: 28)
-              : const Icon(Icons.add, key: ValueKey('add'), size: 30),
-        ),
-      ),
+      floatingActionButton: fab,
       bottomNavigationBar: BottomAppBar(
         color: HsColors.background,
         shape: const CircularNotchedRectangle(),
@@ -254,31 +311,44 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 }
 
 class _NavItem extends StatelessWidget {
-  const _NavItem({required this.icon, required this.label, required this.selected, required this.onTap});
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.badge = 0,
+    this.expanded = true,
+  });
 
   final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final int badge;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context) {
     final color = selected ? HsColors.accent : HsColors.textSecondary;
-    return Expanded(
-      child: Semantics(
+    final item = Semantics(
         selected: selected,
         button: true,
         label: label,
         child: InkWell(
           onTap: onTap,
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(icon, color: color),
+            Badge(
+              isLabelVisible: badge > 0,
+              label: Text(badge > 99 ? '99+' : '$badge'),
+              backgroundColor: HsColors.whatsapp,
+              child: Icon(icon, color: color),
+            ),
             const SizedBox(height: 2),
             Text(label, style: TextStyle(fontSize: 11, color: color)),
           ]),
         ),
-      ),
     );
+    return expanded ? Expanded(child: item) : item;
   }
 }
 

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:intl/intl.dart';
 
 import '../shared/models/models.dart';
+import '../shared/models/whatsapp.dart';
 import 'api/api_client.dart';
 import 'cache/cache_store.dart';
 
@@ -393,4 +394,75 @@ class Repository {
   }
 
   static String iso(DateTime d) => _iso(d);
+
+  // ------------------------------------------------------------ WhatsApp chats
+
+  Future<PageResult<WaChat>> waChats({String? query, bool unreadOnly = false, String? cursor}) async {
+    final data = Map<String, dynamic>.from(await api.get('whatsapp.chats', {
+      'query': query,
+      'unread': unreadOnly ? 1 : null,
+      'cursor': cursor,
+      'page_size': 30,
+    }) as Map);
+    final items = ((data['items'] as List?) ?? const []).map((e) => WaChat.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    if (query == null && !unreadOnly && cursor == null) await cache.write('wa:chats', data);
+    return PageResult(items, str(data['next_cursor']));
+  }
+
+  List<WaChat>? cachedWaChats() {
+    final c = cache.read('wa:chats');
+    if (c == null) return null;
+    final items = ((c.data as Map?)?['items'] as List?) ?? const [];
+    return items.map((e) => WaChat.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  Future<int> waUnreadChats() async {
+    final data = Map<String, dynamic>.from(await api.get('whatsapp.unread_count') as Map);
+    return (data['chats'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<WaThread> waMessages(String phone, {DateTime? before}) async {
+    final data = await api.get('whatsapp.messages', {
+      'phone': phone,
+      'before': before?.toUtc().toIso8601String(),
+    });
+    return WaThread.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  Future<void> waMarkRead(String phone) => api.post('whatsapp.mark_read', {'phone': phone});
+
+  (WaMessage, WaChat) _sent(dynamic data) {
+    final m = Map<String, dynamic>.from(data as Map);
+    return (
+      WaMessage.fromJson(Map<String, dynamic>.from(m['message'] as Map)),
+      WaChat.fromJson(Map<String, dynamic>.from(m['chat'] as Map)),
+    );
+  }
+
+  Future<(WaMessage, WaChat)> waSendText(String phone, String text, {String? replyTo}) async =>
+      _sent(await api.post('whatsapp.send_text', {'phone': phone, 'text': text, 'reply_to': replyTo}));
+
+  Future<(WaMessage, WaChat)> waSendMedia(String phone, String path, {String? caption, String? replyTo}) async =>
+      _sent(await api.upload('whatsapp.send_media', {'phone': phone, 'caption': caption, 'reply_to': replyTo}, path));
+
+  Future<List<WaTemplate>> waTemplates(String? phone) async {
+    final data = Map<String, dynamic>.from(await api.get('whatsapp.templates', {'phone': phone}) as Map);
+    return ((data['items'] as List?) ?? const []).map((e) => WaTemplate.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  Future<(WaMessage, WaChat)> waSendTemplate(String phone, String template, List<String> params, {String? picturePath}) async {
+    final fields = {'phone': phone, 'template': template, 'params': jsonEncode(params)};
+    if (picturePath != null) return _sent(await api.upload('whatsapp.send_template', fields, picturePath));
+    return _sent(await api.post('whatsapp.send_template', fields));
+  }
+
+  /// Downloads (once) a message's photo / voice / file and returns the local path.
+  Future<String> waMediaFile(WaMessage m) async {
+    final ext = (m.media?.ext ?? 'bin').replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final path = '${Directory.systemTemp.path}/hm-wa-${m.id}.$ext';
+    final f = File(path);
+    if (await f.exists() && await f.length() > 0) return path;
+    await api.downloadTo('whatsapp.media', {'message': m.id}, path, what: 'file');
+    return path;
+  }
 }

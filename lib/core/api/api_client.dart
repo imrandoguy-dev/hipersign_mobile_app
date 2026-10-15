@@ -105,7 +105,7 @@ class ApiClient {
   }
 
   /// Downloads a file endpoint (not the JSON envelope) to [path].
-  Future<File> downloadTo(String method, Map<String, dynamic> params, String path) async {
+  Future<File> downloadTo(String method, Map<String, dynamic> params, String path, {String what = 'recording'}) async {
     final r = await _wrap(() => _http.get(_uri(method, params), headers: _headers()).timeout(const Duration(minutes: 2)));
     final type = r.headers['content-type'] ?? '';
     if (r.statusCode == 200 && !type.contains('json')) {
@@ -113,11 +113,11 @@ class ApiClient {
       await f.writeAsBytes(r.bodyBytes, flush: true);
       return f;
     }
-    if (r.statusCode == 404) throw ApiException('NOT_FOUND', 'This recording is no longer available.', 404);
+    if (r.statusCode == 404) throw ApiException('NOT_FOUND', 'This $what is no longer available.', 404);
     if (r.statusCode == 403 || r.statusCode == 401) {
-      throw ApiException('FORBIDDEN', 'You cannot play this recording.', r.statusCode);
+      throw ApiException('FORBIDDEN', 'You cannot open this $what.', r.statusCode);
     }
-    throw ApiException('SERVER_ERROR', 'Could not download the recording (${r.statusCode}).', r.statusCode);
+    throw ApiException('SERVER_ERROR', 'Could not download the $what (${r.statusCode}).', r.statusCode);
   }
 
   Future<http.Response> _wrap(Future<http.Response> Function() call) async {

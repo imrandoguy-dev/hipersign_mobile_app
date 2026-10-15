@@ -165,6 +165,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: p['notify_trials'] == true,
               onChanged: (v) => _save({'notify_trials': v}),
             ),
+            if (p.containsKey('notify_whatsapp'))
+              SwitchListTile(
+                title: const Text('New WhatsApp messages'),
+                subtitle: const Text('From your customers, and from numbers not in ERPNext yet'),
+                value: p['notify_whatsapp'] == true,
+                onChanged: (v) => _save({'notify_whatsapp': v}),
+              ),
             ListTile(
               leading: const Icon(Icons.alarm_outlined),
               title: const Text('Remind me'),

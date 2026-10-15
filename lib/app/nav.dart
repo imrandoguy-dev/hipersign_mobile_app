@@ -4,9 +4,10 @@ import 'theme.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<ScaffoldMessengerState> messengerKey = GlobalKey<ScaffoldMessengerState>();
 
-/// Routes that can arrive from notifications: "/activity/<id>" and "/trial/<id>".
+/// Routes that can arrive from notifications: "/activity/<id>", "/trial/<id>", "/whatsapp/<number>".
 bool isDeepLink(String? route) =>
-    route != null && (route.startsWith('/activity/') || route.startsWith('/trial/'));
+    route != null &&
+    (route.startsWith('/activity/') || route.startsWith('/trial/') || route.startsWith('/whatsapp/'));
 
 void showSnack(String message, {bool error = false}) {
   messengerKey.currentState

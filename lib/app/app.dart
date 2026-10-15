@@ -6,6 +6,7 @@ import '../features/activities/activity_detail_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/shell/home_shell.dart';
 import '../features/trials/trial_detail_screen.dart';
+import '../features/whatsapp/chat_screen.dart';
 import 'nav.dart';
 import 'theme.dart';
 
@@ -25,6 +26,10 @@ class HipersignApp extends StatelessWidget {
         if (name.startsWith('/activity/')) {
           final id = name.substring('/activity/'.length);
           return MaterialPageRoute(builder: (_) => ActivityDetailScreen(activityId: id), settings: settings);
+        }
+        if (name.startsWith('/whatsapp/')) {
+          final key = name.substring('/whatsapp/'.length);
+          return MaterialPageRoute(builder: (_) => ChatScreen(phone: '+$key'), settings: settings);
         }
         if (name.startsWith('/trial/')) {
           final id = name.substring('/trial/'.length);

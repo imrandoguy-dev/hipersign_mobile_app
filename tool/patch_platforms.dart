@@ -60,6 +60,7 @@ void _androidManifest() {
     'android.permission.READ_CALL_LOG',
     'android.permission.PROCESS_OUTGOING_CALLS',
     'android.permission.SYSTEM_ALERT_WINDOW',
+    'android.permission.RECORD_AUDIO', // WhatsApp voice messages
   ];
   final current = s;
   final missing = perms.where((p) => !current.contains('"$p"')).map((p) => '    <uses-permission android:name="$p"/>').join('\n');
@@ -242,6 +243,16 @@ void _iosInfoPlist() {
 		<string>fetch</string>
 	</array>
 ''');
+  }
+  // WhatsApp chats: voice messages, photos.
+  for (final entry in const {
+    'NSMicrophoneUsageDescription': 'Hipersign records voice messages you send to customers on WhatsApp.',
+    'NSCameraUsageDescription': 'Hipersign takes photos you send to customers on WhatsApp.',
+    'NSPhotoLibraryUsageDescription': 'Hipersign sends photos you choose to customers on WhatsApp.',
+  }.entries) {
+    if (!s.contains(entry.key)) {
+      additions.write('\t<key>${entry.key}</key>\n\t<string>${entry.value}</string>\n');
+    }
   }
   if (additions.isNotEmpty) {
     final idx = s.lastIndexOf('</dict>');
