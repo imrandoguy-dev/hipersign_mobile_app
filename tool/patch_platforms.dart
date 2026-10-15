@@ -13,6 +13,7 @@ void main() {
   _androidManifest();
   _androidGradle();
   _androidMainActivity();
+  _androidHomeWidget();
   _iosInfoPlist();
   _iosDeploymentTarget();
   _iosAppDelegate();
@@ -122,6 +123,18 @@ void _androidManifest() {
         </receiver>
 ''';
     s = s.replaceFirst('</application>', '$receiver    </application>');
+  }
+
+  if (!s.contains('HipersignWidget')) {
+    const widget = '''
+        <receiver android:name=".HipersignWidget" android:exported="true" android:label="Hipersign calendar">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/hm_widget_info" />
+        </receiver>
+''';
+    s = s.replaceFirst('</application>', '$widget    </application>');
   }
 
   if (!s.contains('ScheduledNotificationReceiver')) {
@@ -326,7 +339,7 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('pickDocument')) return;
+  if (current.contains('pinWidget')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
@@ -543,6 +556,23 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         pendingDocResult = null
                         result.error("NO_PICKER", "No file picker on this phone", null)
+                    }
+                }
+                "updateWidget" -> {
+                    // Today's calendar for the home screen widget (JSON written by the app).
+                    getSharedPreferences("hm_widget", MODE_PRIVATE).edit()
+                        .putString("data", call.argument<String>("json") ?: "")
+                        .apply()
+                    HipersignWidget.renderAll(this)
+                    result.success(true)
+                }
+                "pinWidget" -> {
+                    val mgr = android.appwidget.AppWidgetManager.getInstance(this)
+                    if (Build.VERSION.SDK_INT >= 26 && mgr.isRequestPinAppWidgetSupported) {
+                        mgr.requestPinAppWidget(android.content.ComponentName(this, HipersignWidget::class.java), null, null)
+                        result.success(true)
+                    } else {
+                        result.success(false)
                     }
                 }
                 "openAppSettings" -> {
@@ -1282,6 +1312,223 @@ class CallerIdReceiver : BroadcastReceiver() {
                     }
                 }
             }
+        }
+    }
+}
+''';
+
+
+/// Home screen widget: today's follow-ups and meetings (data comes from the app).
+void _androidHomeWidget() {
+  final dir = Directory('android/app/src/main/kotlin');
+  if (!dir.existsSync()) return;
+  final main = dir.listSync(recursive: true).whereType<File>().where((f) => f.path.endsWith('MainActivity.kt')).firstOrNull;
+  if (main == null) return;
+  final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(main.readAsStringSync())?[1] ?? 'com.hipersign.hipersign_mobile_app';
+  const res = 'android/app/src/main/res';
+  for (final d in ['layout', 'xml', 'drawable']) {
+    Directory('$res/$d').createSync(recursive: true);
+  }
+  _write('$res/drawable/hm_widget_bg.xml', _widgetBg, 'widget background');
+  _write('$res/layout/hm_widget.xml', _widgetLayout, 'widget layout');
+  _write('$res/layout/hm_widget_row.xml', _widgetRow, 'widget row layout');
+  _write('$res/xml/hm_widget_info.xml', _widgetInfo, 'widget info');
+  _write('${main.parent.path}/HipersignWidget.kt', _widgetKt.replaceFirst('__PACKAGE__', pkg), 'HipersignWidget.kt (home screen widget)');
+}
+
+const _widgetBg = '''<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FFFFFFFF" />
+    <corners android:radius="20dp" />
+</shape>
+''';
+
+const _widgetLayout = '''<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hm_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@drawable/hm_widget_bg">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/hm_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Today"
+            android:textColor="#FF0A3C6E"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+        <TextView
+            android:id="@+id/hm_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FF6B7785"
+            android:textSize="12sp" />
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/hm_rows"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="6dp"
+        android:orientation="vertical" />
+    <TextView
+        android:id="@+id/hm_footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FF6B7785"
+        android:textSize="11sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+</LinearLayout>
+''';
+
+const _widgetRow = '''<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:paddingTop="3dp"
+    android:paddingBottom="3dp">
+    <TextView
+        android:id="@+id/hm_time"
+        android:layout_width="64dp"
+        android:layout_height="wrap_content"
+        android:textColor="#FF0A3C6E"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:maxLines="1" />
+    <TextView
+        android:id="@+id/hm_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="#FF333333"
+        android:textSize="13sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+</LinearLayout>
+''';
+
+const _widgetInfo = '''<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="80dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/hm_widget"
+    android:previewLayout="@layout/hm_widget"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />
+''';
+
+const _widgetKt = r'''
+package __PACKAGE__
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.graphics.Color
+import android.widget.RemoteViews
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/// Home screen widget: today's follow-ups and meetings, pending first. The app writes the
+/// list (SharedPreferences "hm_widget") whenever it syncs; tapping opens the calendar.
+class HipersignWidget : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        for (id in ids) manager.updateAppWidget(id, build(context))
+    }
+
+    companion object {
+        private const val MAX_ROWS = 8
+
+        fun renderAll(context: Context) {
+            val mgr = AppWidgetManager.getInstance(context)
+            val ids = mgr.getAppWidgetIds(ComponentName(context, HipersignWidget::class.java))
+            for (id in ids) mgr.updateAppWidget(id, build(context))
+        }
+
+        private fun build(context: Context): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.hm_widget)
+            val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            if (launch != null) {
+                val pi = PendingIntent.getActivity(
+                    context, 0, launch,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                views.setOnClickPendingIntent(R.id.hm_root, pi)
+            }
+            views.removeAllViews(R.id.hm_rows)
+            val raw = context.getSharedPreferences("hm_widget", Context.MODE_PRIVATE).getString("data", "") ?: ""
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            val data = try { JSONObject(raw) } catch (e: Exception) { null }
+            if (data == null) {
+                views.setTextViewText(R.id.hm_title, "Hipersign")
+                views.setTextViewText(R.id.hm_count, "")
+                views.setTextViewText(R.id.hm_footer, "Open Hipersign to show today's calendar")
+                return views
+            }
+            val stale = data.optString("date") != today
+            views.setTextViewText(
+                R.id.hm_title,
+                if (stale) "Hipersign" else "Today · " + data.optString("label", "")
+            )
+            val items = data.optJSONArray("items")
+            val open = data.optInt("open", 0)
+            views.setTextViewText(R.id.hm_count, if (stale) "" else "$open to do")
+            if (stale) {
+                views.setTextViewText(R.id.hm_footer, "Open Hipersign to refresh today's calendar")
+                return views
+            }
+            val count = items?.length() ?: 0
+            if (count == 0) {
+                val row = RemoteViews(context.packageName, R.layout.hm_widget_row)
+                row.setTextViewText(R.id.hm_time, "")
+                row.setTextViewText(R.id.hm_text, "Nothing scheduled today")
+                views.addView(R.id.hm_rows, row)
+            }
+            for (i in 0 until minOf(count, MAX_ROWS)) {
+                val item = items!!.getJSONObject(i)
+                val row = RemoteViews(context.packageName, R.layout.hm_widget_row)
+                val done = item.optBoolean("done")
+                val overdue = item.optBoolean("overdue")
+                row.setTextViewText(R.id.hm_time, item.optString("time"))
+                row.setTextViewText(R.id.hm_text, (if (done) "✓ " else "") + item.optString("text"))
+                val color = when {
+                    done -> Color.parseColor("#FF9AA5B1")
+                    overdue -> Color.parseColor("#FFC62828")
+                    else -> Color.parseColor("#FF333333")
+                }
+                row.setTextColor(R.id.hm_text, color)
+                if (done) row.setTextColor(R.id.hm_time, Color.parseColor("#FF9AA5B1"))
+                else if (overdue) row.setTextColor(R.id.hm_time, Color.parseColor("#FFC62828"))
+                views.addView(R.id.hm_rows, row)
+            }
+            val more = count - MAX_ROWS
+            val overdueOld = data.optInt("overdue_before", 0)
+            val parts = mutableListOf<String>()
+            if (more > 0) parts.add("+$more more")
+            if (overdueOld > 0) parts.add("$overdueOld overdue from earlier days")
+            parts.add("Updated " + data.optString("updated", ""))
+            views.setTextViewText(R.id.hm_footer, parts.joinToString(" · "))
+            return views
         }
     }
 }

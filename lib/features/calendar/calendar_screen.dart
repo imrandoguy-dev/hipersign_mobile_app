@@ -273,7 +273,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       final widgets = <Widget>[];
       for (var i = 0; i < 7; i++) {
         final day = start.add(Duration(days: i));
-        final items = d.items.where((a) => a.start != null && dateOnly(a.start!) == day).toList();
+        final items = openFirst(d.items.where((a) => a.start != null && dateOnly(a.start!) == day));
         widgets.add(SliverToBoxAdapter(
           child: InkWell(
             onTap: () => _select(day, view: CalView.day),
@@ -296,7 +296,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     // Day view: the day's work first, then (at the bottom) every overdue item from earlier
     // days / earlier today that is still open, then open work with no date.
-    final scheduled = d.items;
+    final scheduled = openFirst(d.items);
     final shown = scheduled.map((a) => a.id).toSet();
     final overdue = d.overdue.where((a) => !shown.contains(a.id)).toList();
     final undated = d.unscheduled.where((a) => !shown.contains(a.id)).toList();

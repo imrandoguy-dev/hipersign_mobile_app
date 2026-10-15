@@ -587,3 +587,13 @@ class EditField {
     );
   }
 }
+
+
+/// Pending work first (in time order), then completed / cancelled (in time order).
+List<Activity> openFirst(Iterable<Activity> items) {
+  int byTime(Activity a, Activity b) =>
+      (a.start ?? DateTime(9999)).compareTo(b.start ?? DateTime(9999));
+  final open = items.where((a) => a.isOpen).toList()..sort(byTime);
+  final closed = items.where((a) => !a.isOpen).toList()..sort(byTime);
+  return [...open, ...closed];
+}

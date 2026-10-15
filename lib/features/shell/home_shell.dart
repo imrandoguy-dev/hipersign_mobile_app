@@ -13,6 +13,7 @@ import '../../core/notifications/notification_service.dart';
 import '../../core/phone/direct_call.dart';
 import '../../core/recordings/recording_service.dart';
 import '../../core/updates/update_service.dart';
+import '../../core/widget/home_widget.dart';
 import '../activities/activity_form.dart';
 import '../activities/activity_list_screen.dart';
 import '../calendar/calendar_screen.dart';
@@ -35,6 +36,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _tab = 0;
   int _leadsSeen = 0;
   Timer? _waPoll;
+  Timer? _widgetDebounce;
+
+  /// Home screen widget: refreshed on start, on resume and after every change.
+  void _refreshWidget() {
+    _widgetDebounce?.cancel();
+    _widgetDebounce = Timer(const Duration(seconds: 2), () {
+      if (mounted) updateHomeWidget(context.read<SessionController>().repo);
+    });
+  }
 
   bool get _hasWhatsApp => context.read<SessionController>().profile?.can('whatsapp') ?? false;
   int get _customersTab => _hasWhatsApp ? 3 : 2;
@@ -50,6 +60,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       if (pending != null) navigatorKey.currentState?.pushNamed(pending);
       _checkForUpdate();
       _refreshWhatsAppBadge();
+      _refreshWidget();
       _openPhoneLink();
       // One permission prompt at a time: recordings first, then the caller pop-up.
       _syncRecordings(ask: true).whenComplete(() async {
@@ -57,6 +68,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         await _syncCallerId();
       });
     });
+    refreshTick.addListener(_refreshWidget);
     _waPoll = Timer.periodic(const Duration(seconds: 45), (_) {
       if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) _refreshWhatsAppBadge();
     });
@@ -151,6 +163,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _waPoll?.cancel();
+    _widgetDebounce?.cancel();
+    refreshTick.removeListener(_refreshWidget);
     NotificationService.instance.onOpenRoute = null;
     setNativeHandlers();
     super.dispose();

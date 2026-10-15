@@ -12,6 +12,7 @@ import '../../core/notifications/notification_service.dart';
 import '../../core/notifications/reminder_planner.dart';
 import '../../core/phone/direct_call.dart';
 import '../../core/updates/update_service.dart';
+import '../../core/widget/home_widget.dart';
 import '../../shared/widgets/reminder_picker.dart';
 import '../recordings/recordings_screen.dart';
 
@@ -200,6 +201,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   label: const Text('Test the alarm'),
                   onPressed: () => NotificationService.instance.testAlarm(),
                 ),
+              ),
+            ),
+          ]),
+        ],
+        if (Platform.isAndroid) ...[
+          const _Header('Home screen'),
+          _Card(children: [
+            ListTile(
+              leading: const Icon(Icons.widgets_outlined),
+              title: const Text('Calendar widget'),
+              subtitle: const Text("Today's follow-ups and meetings on your home screen - pending first, done at the bottom."),
+              trailing: FilledButton(
+                onPressed: () async {
+                  await updateHomeWidget(session.repo);
+                  final ok = await pinHomeWidget();
+                  if (!ok) {
+                    showSnack('Long-press your home screen > Widgets > Hipersign, and drag "Hipersign calendar" to the screen.');
+                  }
+                },
+                child: const Text('Add'),
               ),
             ),
           ]),
