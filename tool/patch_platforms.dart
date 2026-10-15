@@ -1332,6 +1332,8 @@ void _androidHomeWidget() {
   _write('$res/drawable/hm_widget_bg.xml', _widgetBg, 'widget background');
   _write('$res/layout/hm_widget.xml', _widgetLayout, 'widget layout');
   _write('$res/layout/hm_widget_row.xml', _widgetRow, 'widget row layout');
+  _write('$res/layout/hm_widget_day.xml', _widgetDay, 'widget day header');
+  _write('$res/drawable/hm_widget_pill.xml', _widgetPill, 'widget row background');
   _write('$res/xml/hm_widget_info.xml', _widgetInfo, 'widget info');
   _write('${main.parent.path}/HipersignWidget.kt', _widgetKt.replaceFirst('__PACKAGE__', pkg), 'HipersignWidget.kt (home screen widget)');
 }
@@ -1392,13 +1394,39 @@ const _widgetLayout = '''<?xml version="1.0" encoding="utf-8"?>
 </LinearLayout>
 ''';
 
+const _widgetPill = '''<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FFE3ECF5" />
+    <corners android:radius="12dp" />
+</shape>
+''';
+
+const _widgetDay = '''<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hm_day"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingTop="6dp"
+    android:paddingBottom="3dp"
+    android:paddingStart="4dp"
+    android:textColor="#FF0A3C6E"
+    android:textSize="13sp"
+    android:textStyle="bold"
+    android:maxLines="1" />
+''';
+
 const _widgetRow = '''<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:paddingTop="3dp"
-    android:paddingBottom="3dp">
+    android:layout_marginTop="2dp"
+    android:layout_marginBottom="2dp"
+    android:paddingStart="10dp"
+    android:paddingEnd="10dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp"
+    android:background="@drawable/hm_widget_pill">
     <TextView
         android:id="@+id/hm_time"
         android:layout_width="64dp"
@@ -1422,11 +1450,11 @@ const _widgetRow = '''<?xml version="1.0" encoding="utf-8"?>
 const _widgetInfo = '''<?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="250dp"
-    android:minHeight="110dp"
+    android:minHeight="180dp"
     android:minResizeWidth="180dp"
     android:minResizeHeight="80dp"
     android:targetCellWidth="4"
-    android:targetCellHeight="2"
+    android:targetCellHeight="4"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/hm_widget"
     android:previewLayout="@layout/hm_widget"
@@ -1457,7 +1485,7 @@ class HipersignWidget : AppWidgetProvider() {
     }
 
     companion object {
-        private const val MAX_ROWS = 8
+        private const val MAX_ROWS = 14
 
         fun renderAll(context: Context) {
             val mgr = AppWidgetManager.getInstance(context)
@@ -1476,59 +1504,88 @@ class HipersignWidget : AppWidgetProvider() {
                 views.setOnClickPendingIntent(R.id.hm_root, pi)
             }
             views.removeAllViews(R.id.hm_rows)
+            val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val now = Date()
+            val today = fmt.format(now)
+            val tomorrow = fmt.format(Date(now.time + 24L * 3600 * 1000))
+            views.setTextViewText(R.id.hm_title, SimpleDateFormat("d EEE", Locale.getDefault()).format(now))
             val raw = context.getSharedPreferences("hm_widget", Context.MODE_PRIVATE).getString("data", "") ?: ""
-            val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
             val data = try { JSONObject(raw) } catch (e: Exception) { null }
             if (data == null) {
-                views.setTextViewText(R.id.hm_title, "Hipersign")
                 views.setTextViewText(R.id.hm_count, "")
-                views.setTextViewText(R.id.hm_footer, "Open Hipersign to show today's calendar")
+                views.setTextViewText(R.id.hm_footer, "Open Hipersign to show your calendar")
                 return views
             }
-            val stale = data.optString("date") != today
-            views.setTextViewText(
-                R.id.hm_title,
-                if (stale) "Hipersign" else "Today · " + data.optString("label", "")
-            )
-            val items = data.optJSONArray("items")
-            val open = data.optInt("open", 0)
-            views.setTextViewText(R.id.hm_count, if (stale) "" else "$open to do")
-            if (stale) {
-                views.setTextViewText(R.id.hm_footer, "Open Hipersign to refresh today's calendar")
-                return views
+            val fresh = data.optString("date") == today
+            views.setTextViewText(R.id.hm_count, if (fresh) "${data.optInt("open_today", 0)} to do today" else "")
+
+            var rows = 0
+            var hidden = 0
+            val days = data.optJSONArray("days")
+            var hasToday = false
+            for (d in 0 until (days?.length() ?: 0)) if (days!!.getJSONObject(d).optString("date") == today) hasToday = true
+            if (!hasToday) {
+                // Saved on an earlier day and nothing listed for today.
+                val header = RemoteViews(context.packageName, R.layout.hm_widget_day)
+                header.setTextViewText(R.id.hm_day, "Today")
+                views.addView(R.id.hm_rows, header)
+                views.addView(R.id.hm_rows, row(context, "", "Nothing scheduled", false, false))
+                rows += 2
             }
-            val count = items?.length() ?: 0
-            if (count == 0) {
-                val row = RemoteViews(context.packageName, R.layout.hm_widget_row)
-                row.setTextViewText(R.id.hm_time, "")
-                row.setTextViewText(R.id.hm_text, "Nothing scheduled today")
-                views.addView(R.id.hm_rows, row)
-            }
-            for (i in 0 until minOf(count, MAX_ROWS)) {
-                val item = items!!.getJSONObject(i)
-                val row = RemoteViews(context.packageName, R.layout.hm_widget_row)
-                val done = item.optBoolean("done")
-                val overdue = item.optBoolean("overdue")
-                row.setTextViewText(R.id.hm_time, item.optString("time"))
-                row.setTextViewText(R.id.hm_text, (if (done) "✓ " else "") + item.optString("text"))
-                val color = when {
-                    done -> Color.parseColor("#FF9AA5B1")
-                    overdue -> Color.parseColor("#FFC62828")
-                    else -> Color.parseColor("#FF333333")
+            for (d in 0 until (days?.length() ?: 0)) {
+                val day = days!!.getJSONObject(d)
+                val date = day.optString("date")
+                if (date < today) continue // the app hasn't refreshed since: skip days that are over
+                val items = day.optJSONArray("items")
+                val n = items?.length() ?: 0
+                if (n == 0 && date != today) continue
+                if (rows >= MAX_ROWS) { hidden += n; continue }
+                val header = RemoteViews(context.packageName, R.layout.hm_widget_day)
+                header.setTextViewText(
+                    R.id.hm_day,
+                    when (date) { today -> "Today"; tomorrow -> "Tomorrow"; else -> day.optString("label") }
+                )
+                views.addView(R.id.hm_rows, header)
+                rows++
+                if (n == 0) {
+                    views.addView(R.id.hm_rows, row(context, "", "Nothing scheduled", false, false))
+                    rows++
                 }
-                row.setTextColor(R.id.hm_text, color)
-                if (done) row.setTextColor(R.id.hm_time, Color.parseColor("#FF9AA5B1"))
-                else if (overdue) row.setTextColor(R.id.hm_time, Color.parseColor("#FFC62828"))
-                views.addView(R.id.hm_rows, row)
+                for (i in 0 until n) {
+                    if (rows >= MAX_ROWS) { hidden += n - i; break }
+                    val item = items!!.getJSONObject(i)
+                    views.addView(
+                        R.id.hm_rows,
+                        row(context, item.optString("time"), item.optString("text"), item.optBoolean("done"),
+                            item.optBoolean("overdue") && date == today)
+                    )
+                    rows++
+                }
             }
-            val more = count - MAX_ROWS
-            val overdueOld = data.optInt("overdue_before", 0)
+            if (rows == 0) {
+                views.addView(R.id.hm_rows, row(context, "", "Nothing scheduled in the next two weeks", false, false))
+            }
             val parts = mutableListOf<String>()
-            if (more > 0) parts.add("+$more more")
-            if (overdueOld > 0) parts.add("$overdueOld overdue from earlier days")
-            parts.add("Updated " + data.optString("updated", ""))
+            if (hidden > 0) parts.add("+$hidden more")
+            val overdueOld = data.optInt("overdue_before", 0)
+            if (fresh && overdueOld > 0) parts.add("$overdueOld overdue")
+            parts.add(if (fresh) "Updated " + data.optString("updated", "") else "Open Hipersign to refresh")
             views.setTextViewText(R.id.hm_footer, parts.joinToString(" · "))
             return views
+        }
+
+        private fun row(context: Context, time: String, text: String, done: Boolean, overdue: Boolean): RemoteViews {
+            val row = RemoteViews(context.packageName, R.layout.hm_widget_row)
+            row.setTextViewText(R.id.hm_time, time)
+            row.setTextViewText(R.id.hm_text, (if (done) "✓ " else "") + text)
+            val color = when {
+                done -> Color.parseColor("#FF9AA5B1")
+                overdue -> Color.parseColor("#FFC62828")
+                else -> Color.parseColor("#FF1F2A37")
+            }
+            row.setTextColor(R.id.hm_text, color)
+            row.setTextColor(R.id.hm_time, if (done) color else if (overdue) color else Color.parseColor("#FF0A3C6E"))
+            return row
         }
     }
 }

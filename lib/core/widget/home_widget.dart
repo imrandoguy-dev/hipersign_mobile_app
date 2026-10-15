@@ -9,32 +9,42 @@ import '../repository.dart';
 
 const _channel = MethodChannel('hipersign/phone');
 
-/// Sends today's follow-ups and meetings to the home screen widget (Android).
-/// Pending work first, then what's done. Safe to call often; does nothing offline.
+/// Sends the coming days' follow-ups and meetings to the home screen widget (Android):
+/// today first (pending before done), then the next days that have work - like an agenda.
+/// Safe to call often; does nothing offline.
 Future<void> updateHomeWidget(Repository repo) async {
   if (!Platform.isAndroid) return;
   try {
     final now = DateTime.now();
     final day = DateTime(now.year, now.month, now.day);
-    final d = await repo.calendar(day, day);
-    final today = openFirst(d.items.where((a) =>
-        a.start != null && a.start!.year == day.year && a.start!.month == day.month && a.start!.day == day.day));
-    final items = [
-      for (final a in today)
-        {
-          'time': DateFormat.jm().format(a.start!),
-          'text': a.party != null && a.party!.name.isNotEmpty ? '${a.title} · ${a.party!.name}' : a.title,
-          'done': !a.isOpen,
-          'overdue': a.isOpen && a.start!.isBefore(now),
-        },
-    ];
+    final last = day.add(const Duration(days: widgetDays - 1));
+    final d = await repo.calendar(day, last);
+    final days = <Map<String, dynamic>>[];
+    for (var i = 0; i < widgetDays; i++) {
+      final date = day.add(Duration(days: i));
+      final work = openFirst(d.items.where((a) =>
+          a.start != null && a.start!.year == date.year && a.start!.month == date.month && a.start!.day == date.day));
+      if (work.isEmpty && i > 0) continue; // only today is listed when empty
+      days.add({
+        'date': DateFormat('yyyy-MM-dd').format(date),
+        'label': DateFormat('EEE, d MMM').format(date),
+        'items': [
+          for (final a in work)
+            {
+              'time': DateFormat.jm().format(a.start!),
+              'text': a.party != null && a.party!.name.isNotEmpty ? '${a.title} · ${a.party!.name}' : a.title,
+              'done': !a.isOpen,
+              'overdue': a.isOpen && a.start!.isBefore(now),
+            },
+        ],
+      });
+    }
     final earlier = d.overdue.where((a) => a.start != null && a.start!.isBefore(day)).length;
     await _channel.invokeMethod('updateWidget', {
       'json': jsonEncode({
         'date': DateFormat('yyyy-MM-dd').format(day),
-        'label': DateFormat('EEE d MMM').format(day),
-        'items': items,
-        'open': today.where((a) => a.isOpen).length,
+        'days': days,
+        'open_today': days.isEmpty ? 0 : (days.first['items'] as List).where((x) => x['done'] != true).length,
         'overdue_before': earlier,
         'updated': DateFormat.jm().format(now),
       }),
@@ -43,6 +53,9 @@ Future<void> updateHomeWidget(Repository repo) async {
     // Offline or no widget support: the widget keeps its last copy.
   }
 }
+
+/// How far ahead the widget looks.
+const widgetDays = 14;
 
 /// Asks the launcher to add the widget to the home screen. False when the phone can't.
 Future<bool> pinHomeWidget() async {
