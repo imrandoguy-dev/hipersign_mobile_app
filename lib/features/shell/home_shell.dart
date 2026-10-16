@@ -22,6 +22,7 @@ import '../customers/customer_detail_screen.dart';
 import '../customers/customers_screen.dart';
 import '../customers/dialer_sheet.dart';
 import '../trials/book_trial_screen.dart';
+import '../development/development_screen.dart';
 import '../whatsapp/chats_screen.dart';
 import 'more_screen.dart';
 
@@ -241,6 +242,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // Keep call recording in step with the user's features whenever the profile changes.
     RecordingService.instance.bind(profile.user, enabled: profile.can('call_recordings'));
     if (!profile.workspaces.contains('sales')) {
+      if (profile.workspaces.contains('development')) return const _DevelopmentOnly();
       return _NoWorkspace(name: profile.fullName);
     }
     final wa = profile.can('whatsapp');
@@ -399,5 +401,27 @@ class _NoWorkspace extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+
+/// Developers (no sales work): their development tasks, with Settings and sign-out.
+class _DevelopmentOnly extends StatelessWidget {
+  const _DevelopmentOnly();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(children: [
+      const DevelopmentScreen(showBack: false),
+      Positioned(
+        top: MediaQuery.paddingOf(context).top + 4,
+        right: 4,
+        child: IconButton(
+          tooltip: 'More',
+          icon: const Icon(Icons.more_vert),
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MoreScreen())),
+        ),
+      ),
+    ]);
   }
 }

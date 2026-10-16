@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:intl/intl.dart';
 
 import '../shared/models/calls.dart';
+import '../shared/models/development.dart';
 import '../shared/models/models.dart';
 import '../shared/models/whatsapp.dart';
 import 'api/api_client.dart';
@@ -489,4 +490,37 @@ class Repository {
     await api.downloadTo('recordings.download', {'name': id}, path);
     return path;
   }
+
+  // ------------------------------------------------------------ development tasks
+
+  Future<DevPage> devTasks({String scope = 'mine', String filter = 'open', String? cursor}) async {
+    final params = {'scope': scope, 'filter': filter, 'cursor': cursor, 'page_size': 40};
+    final data = Map<String, dynamic>.from(
+        (cursor == null ? await fetch('dev:$scope:$filter', 'development.list_tasks', params) : await api.get('development.list_tasks', params))
+            as Map);
+    final counts = Map<String, dynamic>.from((data['counts'] as Map?) ?? const {});
+    return DevPage(
+      ((data['items'] as List?) ?? const []).map((e) => DevTask.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+      str(data['next_cursor']),
+      (counts['open'] as num?)?.toInt() ?? 0,
+      (counts['late'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Future<DevTask> devTask(String id) async =>
+      DevTask.fromJson(Map<String, dynamic>.from(await api.get('development.get_task', {'task_id': id}) as Map));
+
+  Future<List<Map<String, String>>> developers() async {
+    final data = Map<String, dynamic>.from(await api.get('development.developers') as Map);
+    return ((data['items'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((e) => {'id': e['id'].toString(), 'name': e['name'].toString()})
+        .toList();
+  }
+
+  Future<DevTask> devCreate(Map<String, dynamic> values) async =>
+      DevTask.fromJson(Map<String, dynamic>.from(await api.post('development.create_task', values) as Map));
+
+  Future<DevTask> devUpdate(String id, Map<String, dynamic> values) async => DevTask.fromJson(
+      Map<String, dynamic>.from(await api.post('development.update_task', {'task_id': id, ...values}) as Map));
 }

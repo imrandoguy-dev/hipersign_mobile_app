@@ -7,7 +7,10 @@ final GlobalKey<ScaffoldMessengerState> messengerKey = GlobalKey<ScaffoldMesseng
 /// Routes that can arrive from notifications: "/activity/<id>", "/trial/<id>", "/whatsapp/<number>".
 bool isDeepLink(String? route) =>
     route != null &&
-    (route.startsWith('/activity/') || route.startsWith('/trial/') || route.startsWith('/whatsapp/'));
+    (route.startsWith('/activity/') ||
+        route.startsWith('/trial/') ||
+        route.startsWith('/whatsapp/') ||
+        route.startsWith('/dev/'));
 
 void showSnack(String message, {bool error = false}) {
   messengerKey.currentState
