@@ -339,9 +339,9 @@ class _RecordingsScreenState extends State<RecordingsScreen> with WidgetsBinding
                       _delete(r);
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'open', child: Text('Open customer')),
-                    PopupMenuItem(value: 'delete', child: Text('Delete recording')),
+                  itemBuilder: (_) => [
+                    if (r.party.isNotEmpty) const PopupMenuItem(value: 'open', child: Text('Open customer')),
+                    const PopupMenuItem(value: 'delete', child: Text('Delete recording')),
                   ],
                 ),
               ),

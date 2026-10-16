@@ -539,8 +539,11 @@ class RecordingService extends ChangeNotifier {
   Future<void> _uploadReady(Repository repo) async {
     final ready = _entries
         .where((e) =>
-            e.hasRecording && e.hasParty &&
-            (e.status == CallEntry.found || (e.status == CallEntry.failed && e.attempts < _maxAttempts)))
+            e.hasRecording &&
+            (e.hasParty || e.autoLinkTried) && // not in ERPNext: saved with the number, linked later
+            (e.status == CallEntry.found ||
+                e.status == CallEntry.unlinked ||
+                (e.status == CallEntry.failed && e.attempts < _maxAttempts)))
         .toList();
     for (final e in ready) {
       await _upload(repo, e);
@@ -567,11 +570,16 @@ class RecordingService extends ChangeNotifier {
       }, local);
       e
         ..serverId = saved.id
-        ..partyName = saved.partyName
+        ..partyName = saved.party.isEmpty ? e.partyName : saved.partyName
         ..status = CallEntry.uploaded;
+      if (!e.hasParty && saved.party.isNotEmpty) {
+        e
+          ..partyDoctype = saved.partyDoctype
+          ..party = saved.party;
+      }
     } on ApiException catch (err) {
       if (err.isNetwork || err.code == 'RATE_LIMITED') {
-        e.status = CallEntry.found; // try again on the next sync, no attempt used
+        e.status = e.hasParty ? CallEntry.found : CallEntry.unlinked; // try again on the next sync
       } else {
         e
           ..attempts += 1
