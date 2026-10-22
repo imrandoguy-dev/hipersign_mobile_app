@@ -62,7 +62,7 @@ Future<PendingFile?> pickAttachment(BuildContext context) async {
     final picker = ImagePicker();
     switch (choice) {
       case 'voice':
-        return recordVoiceNote(context);
+        return await recordVoiceNote(context);
       case 'camera':
         final x = await picker.pickImage(source: ImageSource.camera, imageQuality: 80, maxWidth: 2200);
         return x == null ? null : PendingFile(x.path);
