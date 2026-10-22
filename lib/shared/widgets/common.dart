@@ -167,3 +167,27 @@ Future<T?> runWrite<T>(BuildContext context, Future<T> Function() action, {Strin
     return null;
   }
 }
+
+/// A clear popup for something the user forgot to fill in (e.g. "Customer not selected").
+/// [onFix] is offered as the main button (e.g. opens the customer picker).
+Future<void> showMissing(BuildContext context, String title, String message, {String? fixLabel, VoidCallback? onFix}) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.error_outline, color: Color(0xFFC62828), size: 36),
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        if (onFix != null)
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onFix();
+            },
+            child: Text(fixLabel ?? 'Fix'),
+          ),
+      ],
+    ),
+  );
+}

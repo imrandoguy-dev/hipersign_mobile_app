@@ -6,6 +6,7 @@ import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../shared/models/models.dart';
+import '../../shared/widgets/attachments.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../activities/activity_detail_screen.dart';
@@ -96,6 +97,7 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
     final b = _b!;
     final id = session?.id ?? b.id;
     final current = session?.start ?? b.start;
+    final currentEnd = session?.end ?? b.end;
     TrainerSlot? picked;
     final ok = await showModalBottomSheet<bool>(
       context: context,
@@ -114,11 +116,18 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
             ),
             if (current != null) Text('Now: ${fmtDayTime(current)}'),
             const SizedBox(height: 12),
-            SlotPicker(bookingType: b.bookingType, selectedId: picked?.id, onPick: (s) => setSheet(() => picked = s)),
+            SlotPicker(
+              bookingType: b.bookingType,
+              selectedId: picked?.id,
+              onPick: (s) => setSheet(() => picked = s),
+              initialTrainer: session?.trainer ?? b.trainer,
+              initialStart: current,
+              initialEnd: currentEnd,
+            ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: picked == null ? null : () => Navigator.pop(ctx, true),
-              child: Text(picked == null ? 'Pick a slot' : 'Move to ${fmtDayTime(picked!.start)}'),
+              child: Text(picked == null ? 'Choose the new time above' : 'Move to ${fmtDayTime(picked!.start)} - ${fmtTime(picked!.end)}'),
             ),
           ]),
         ),
@@ -173,7 +182,7 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
           initialChildSize: 0.85,
           builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(16, 0, 16, 24), children: [
             const Text('Add a session', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            const Text('Pick the day and time for this session (any trainer).'),
+            const Text('Pick the trainer, day and exact time for this session.'),
             const SizedBox(height: 12),
             SlotPicker(
               bookingType: b.bookingType,
@@ -183,7 +192,7 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
             const SizedBox(height: 16),
             FilledButton(
               onPressed: picked == null ? null : () => Navigator.pop(ctx, true),
-              child: Text(picked == null ? 'Pick a slot' : 'Add ${fmtDayTime(picked!.slot.start)}'),
+              child: Text(picked == null ? 'Choose the time above' : 'Add ${fmtDayTime(picked!.slot.start)} - ${fmtTime(picked!.slot.end)}'),
             ),
           ]),
         ),
@@ -315,6 +324,13 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
                 if (b.notes != null) ...[const SizedBox(height: 12), Text('Notes: ${b.notes}')],
                 if (b.cancellationReason != null) ...[const SizedBox(height: 8), Text('Cancelled: ${b.cancellationReason}')],
                 if (b.completionNotes != null) ...[const SizedBox(height: 8), Text('Result: ${b.completionNotes}')],
+                const SizedBox(height: 16),
+                AttachmentsSection(
+                  key: ValueKey('att-${b.trial?.series ?? b.id}'),
+                  doctype: 'Trial Booking',
+                  name: b.trial?.series ?? b.id, // one set of files for all sessions of the trial
+                  title: 'Files & voice notes for the training',
+                ),
                 if (b.activityId != null) ...[
                   const SizedBox(height: 12),
                   OutlinedButton.icon(

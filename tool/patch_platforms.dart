@@ -1486,6 +1486,7 @@ class HipersignWidget : AppWidgetProvider() {
 
     companion object {
         private const val MAX_ROWS = 14
+        private const val MAX_OVERDUE_ROWS = 5
 
         fun renderAll(context: Context) {
             val mgr = AppWidgetManager.getInstance(context)
@@ -1524,6 +1525,22 @@ class HipersignWidget : AppWidgetProvider() {
             val days = data.optJSONArray("days")
             var hasToday = false
             for (d in 0 until (days?.length() ?: 0)) if (days!!.getJSONObject(d).optString("date") == today) hasToday = true
+            // Old work still open (earlier days): listed first, in red, until it is done.
+            val old = data.optJSONArray("overdue")
+            val oldCount = old?.length() ?: 0
+            if (fresh && oldCount > 0) {
+                val header = RemoteViews(context.packageName, R.layout.hm_widget_day)
+                header.setTextViewText(R.id.hm_day, "Overdue ($oldCount)")
+                views.addView(R.id.hm_rows, header)
+                rows++
+                val shown = minOf(oldCount, MAX_OVERDUE_ROWS)
+                for (i in 0 until shown) {
+                    val item = old!!.getJSONObject(i)
+                    views.addView(R.id.hm_rows, row(context, item.optString("time"), item.optString("text"), false, true))
+                    rows++
+                }
+                hidden += oldCount - shown
+            }
             if (!hasToday) {
                 // Saved on an earlier day and nothing listed for today.
                 val header = RemoteViews(context.packageName, R.layout.hm_widget_day)
@@ -1567,8 +1584,6 @@ class HipersignWidget : AppWidgetProvider() {
             }
             val parts = mutableListOf<String>()
             if (hidden > 0) parts.add("+$hidden more")
-            val overdueOld = data.optInt("overdue_before", 0)
-            if (fresh && overdueOld > 0) parts.add("$overdueOld overdue")
             parts.add(if (fresh) "Updated " + data.optString("updated", "") else "Open Hipersign to refresh")
             views.setTextViewText(R.id.hm_footer, parts.joinToString(" · "))
             return views

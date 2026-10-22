@@ -7,6 +7,10 @@ import '../../app/theme.dart';
 import '../../core/auth/session.dart';
 import '../activities/activity_list_screen.dart';
 import '../calls/calls_screen.dart';
+import '../concerns/concerns_screen.dart';
+import '../feedback/feedback_screen.dart';
+import '../reports/daily_report_screen.dart';
+import '../targets/targets.dart';
 import '../development/development_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../recordings/recordings_screen.dart';
@@ -44,8 +48,16 @@ class MoreScreen extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 16),
+        if (p.can('tasks'))
+          _Tile(icon: Icons.task_alt, title: 'Tasks', onTap: () => open(const DevelopmentScreen(kind: 'team'))),
         if (p.can('development'))
           _Tile(icon: Icons.code, title: 'Development', onTap: () => open(const DevelopmentScreen())),
+        if (p.can('daily_report'))
+          _Tile(icon: Icons.assignment_turned_in_outlined, title: 'My daily report', onTap: () => open(const DailyReportScreen())),
+        if (p.can('team_reports'))
+          _Tile(icon: Icons.groups_outlined, title: 'Team daily report', onTap: () => open(const TeamReportScreen())),
+        if (p.can('call_targets'))
+          _Tile(icon: Icons.track_changes, title: 'Call targets', onTap: () => open(const TargetsScreen())),
         if (p.can('customers'))
           _Tile(icon: Icons.call_outlined, title: 'Calls', onTap: () => open(const CallsScreen())),
         if (p.can('meetings'))
@@ -54,6 +66,14 @@ class MoreScreen extends StatelessWidget {
           _Tile(icon: Icons.school_outlined, title: 'Trials & training', onTap: () => open(const TrialsScreen())),
         if (Platform.isAndroid && p.can('call_recordings'))
           _Tile(icon: Icons.graphic_eq, title: 'Call recordings', onTap: () => open(const RecordingsScreen())),
+        if (p.can('feedback'))
+          _Tile(icon: Icons.lightbulb_outline, title: 'App suggestions & bugs', onTap: () => open(const FeedbackScreen())),
+        if (p.can('concerns'))
+          _Tile(
+            icon: Icons.shield_outlined,
+            title: p.can('concerns_hr') || p.can('concerns_ceo') ? 'Concerns' : 'Raise a concern (private)',
+            onTap: () => open(const ConcernsScreen()),
+          ),
         _Tile(icon: Icons.notifications_none, title: 'Notifications', onTap: () => open(const NotificationsScreen())),
         _Tile(icon: Icons.settings_outlined, title: 'Settings', onTap: () => open(const SettingsScreen())),
         const SizedBox(height: 8),

@@ -10,7 +10,12 @@ bool isDeepLink(String? route) =>
     (route.startsWith('/activity/') ||
         route.startsWith('/trial/') ||
         route.startsWith('/whatsapp/') ||
-        route.startsWith('/dev/'));
+        route.startsWith('/dev/') ||
+        route.startsWith('/task/') ||
+        route.startsWith('/report/') ||
+        route.startsWith('/feedback/') ||
+        route.startsWith('/concern/') ||
+        route == '/target');
 
 void showSnack(String message, {bool error = false}) {
   messengerKey.currentState

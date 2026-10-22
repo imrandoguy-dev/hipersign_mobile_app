@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../shared/models/models.dart';
+import '../../shared/widgets/attachments.dart';
 import '../../shared/widgets/common.dart';
 import '../customers/party_picker.dart';
 import 'slot_picker.dart';
@@ -28,6 +29,7 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
   int _days = 1; // trial length in calendar days
   TrainerSlot? _slot;
   final _notes = TextEditingController();
+  List<PendingFile> _files = [];
   bool _saving = false;
   int _refresh = 0;
 
@@ -40,11 +42,30 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
     super.dispose();
   }
 
+  Future<void> _pickParty() async {
+    final p = await pickParty(context);
+    if (p != null) {
+      if (p.doctype == 'CRM Deal') {
+        showSnack('Pick the customer or lead for a trial.', error: true);
+        return;
+      }
+      setState(() => _party = p);
+    }
+  }
+
   Future<void> _book() async {
-    if (_party == null || _slot == null) return;
+    if (_party == null) {
+      return showMissing(context, 'Customer not selected', 'Choose the customer or lead for this trial before booking.',
+          fixLabel: 'Choose customer', onFix: _pickParty);
+    }
+    if (_slot == null) {
+      return showMissing(context, 'Time not selected',
+          'Choose the trainer and the time (start and end) for the session, then tap "Use this time".');
+    }
     setState(() => _saving = true);
     try {
-      final (b, skipped) = await context.read<SessionController>().repo.book(
+      final repo = context.read<SessionController>().repo;
+      final (b, skipped) = await repo.book(
             slotId: _slot!.id,
             customer: _party!.doctype == 'Customer' ? _party!.id : null,
             lead: _party!.doctype == 'CRM Lead' ? _party!.id : null,
@@ -53,6 +74,7 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
             idempotencyKey: _key,
             trialDays: _days,
           );
+      if (_files.isNotEmpty) await uploadPending(repo, 'Trial Booking', b.id, _files);
       bumpRefresh();
       if (!mounted) return;
       showSnack(_days > 1
@@ -106,16 +128,7 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
           title: Text(_party?.name ?? 'Choose customer or lead'),
           subtitle: _party == null ? null : Text(_party!.kind),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () async {
-            final p = await pickParty(context);
-            if (p != null) {
-              if (p.doctype == 'CRM Deal') {
-                showSnack('Pick the customer or lead for a trial.', error: true);
-                return;
-              }
-              setState(() => _party = p);
-            }
-          },
+          onTap: _pickParty,
         ),
         const SizedBox(height: 12),
         SegmentedButton<String>(
@@ -148,16 +161,22 @@ class _BookTrialScreenState extends State<BookTrialScreen> {
         ),
         const SizedBox(height: 16),
         TextField(controller: _notes, maxLines: 3, decoration: const InputDecoration(labelText: 'Notes for the trainer (optional)')),
+        const SizedBox(height: 12),
+        PendingAttachments(
+          files: _files,
+          onChanged: (f) => setState(() => _files = f),
+          title: 'Files & voice notes for the trainer',
+        ),
       ]),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: FilledButton(
-            onPressed: (_party == null || _slot == null || _saving) ? null : _book,
+            onPressed: _saving ? null : _book,
             child: _saving
                 ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
-                : Text(_slot == null
-                    ? 'Pick a time slot'
+                : Text(_party == null || _slot == null
+                    ? 'Book trial'
                     : (_days > 1
                         ? 'Book $_days-day trial · first session ${fmtDayTime(_slot!.start)}'
                         : 'Book ${fmtDayTime(_slot!.start)}')),

@@ -8,6 +8,9 @@ import '../features/shell/home_shell.dart';
 import '../features/development/development_screen.dart';
 import '../features/trials/trial_detail_screen.dart';
 import '../features/whatsapp/chat_screen.dart';
+import '../features/concerns/concerns_screen.dart';
+import '../features/feedback/feedback_screen.dart';
+import '../features/reports/daily_report_screen.dart';
 import 'nav.dart';
 import 'theme.dart';
 
@@ -31,6 +34,22 @@ class HipersignApp extends StatelessWidget {
         if (name.startsWith('/dev/')) {
           final id = name.substring('/dev/'.length);
           return MaterialPageRoute(builder: (_) => DevTaskScreen(taskId: id), settings: settings);
+        }
+        if (name.startsWith('/task/')) {
+          final id = name.substring('/task/'.length);
+          return MaterialPageRoute(builder: (_) => DevTaskScreen(taskId: id, kind: 'team'), settings: settings);
+        }
+        if (name == '/report/team') {
+          return MaterialPageRoute(builder: (_) => const TeamReportScreen(), settings: settings);
+        }
+        if (name.startsWith('/report/') || name == '/target') {
+          return MaterialPageRoute(builder: (_) => const DailyReportScreen(), settings: settings);
+        }
+        if (name.startsWith('/feedback/')) {
+          return MaterialPageRoute(builder: (_) => SuggestionScreen(id: name.substring('/feedback/'.length)), settings: settings);
+        }
+        if (name.startsWith('/concern/')) {
+          return MaterialPageRoute(builder: (_) => ConcernScreen(id: name.substring('/concern/'.length)), settings: settings);
         }
         if (name.startsWith('/whatsapp/')) {
           final key = name.substring('/whatsapp/'.length);

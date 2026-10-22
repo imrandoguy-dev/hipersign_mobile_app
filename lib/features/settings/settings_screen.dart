@@ -173,6 +173,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 value: p['notify_development'] == true,
                 onChanged: (v) => _save({'notify_development': v}),
               ),
+            if (p.containsKey('notify_tasks'))
+              SwitchListTile(
+                title: const Text('Tasks'),
+                subtitle: const Text('New tasks, reminders before the deadline, deadline crossed'),
+                value: p['notify_tasks'] == true,
+                onChanged: (v) => _save({'notify_tasks': v}),
+              ),
             if (p.containsKey('notify_whatsapp'))
               SwitchListTile(
                 title: const Text('New WhatsApp messages'),

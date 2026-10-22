@@ -11,6 +11,9 @@ class DevNote {
 class DevTask {
   DevTask({
     required this.id,
+    this.kind = 'dev',
+    this.team,
+    this.attachments = 0,
     required this.title,
     required this.status,
     required this.priority,
@@ -33,6 +36,9 @@ class DevTask {
   });
 
   final String id;
+  final String kind; // dev | team
+  final String? team; // Accounts, Marketing... (team tasks)
+  final int attachments;
   final String title;
   final String status; // Open | In Progress | In Review | Done | Cancelled
   final String priority;
@@ -57,6 +63,9 @@ class DevTask {
 
   factory DevTask.fromJson(Map<String, dynamic> j) => DevTask(
         id: j['id'].toString(),
+        kind: j['kind']?.toString() ?? 'dev',
+        team: str(j['team']),
+        attachments: (j['attachments'] as num?)?.toInt() ?? 0,
         title: j['title']?.toString() ?? '',
         status: j['status']?.toString() ?? 'Open',
         priority: j['priority']?.toString() ?? 'Medium',
@@ -83,9 +92,10 @@ class DevTask {
 }
 
 class DevPage {
-  DevPage(this.items, this.nextCursor, this.open, this.late);
+  DevPage(this.items, this.nextCursor, this.open, this.late, {this.teams = const []});
   final List<DevTask> items;
   final String? nextCursor;
   final int open;
   final int late;
+  final List<String> teams;
 }

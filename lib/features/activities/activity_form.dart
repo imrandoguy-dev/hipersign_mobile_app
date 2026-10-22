@@ -144,10 +144,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
   Future<void> _saveEdit() async {
     final a = _existing!;
-    if (_party == null) {
-      _snack('Choose a customer or lead.');
-      return;
-    }
+    if (_party == null) return _missingParty();
     final title = _title.text.trim().isEmpty ? '$_type - ${_party!.name}' : _title.text.trim();
     final minutes = _customMinutes ?? _minutes;
     final values = <String, dynamic>{
@@ -187,10 +184,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
   Future<void> _save() async {
     if (_editing) return _saveEdit();
-    if (_party == null) {
-      _snack('Choose a customer or lead.');
-      return;
-    }
+    if (_party == null) return _missingParty();
     final title = _title.text.trim().isEmpty ? '$_type - ${_party!.name}' : _title.text.trim();
     setState(() => _saving = true);
     final repo = context.read<SessionController>().repo;
@@ -218,6 +212,19 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  Future<void> _pickParty() async {
+    final p = await pickParty(context);
+    if (p != null) setState(() => _party = p);
+  }
+
+  Future<void> _missingParty() => showMissing(
+        context,
+        'Customer not selected',
+        'Choose the customer or lead for this ${_type.toLowerCase()} before saving.',
+        fixLabel: 'Choose customer',
+        onFix: _pickParty,
+      );
 
   void _snack(String m) => ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(m)));
 
@@ -247,10 +254,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
           title: Text(_party?.name ?? 'Choose customer or lead'),
           subtitle: _party == null ? null : Text(_party!.kind),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () async {
-            final p = await pickParty(context);
-            if (p != null) setState(() => _party = p);
-          },
+          onTap: _pickParty,
         ),
         const SizedBox(height: 12),
         TextField(controller: _title, decoration: const InputDecoration(labelText: 'Title (optional)')),

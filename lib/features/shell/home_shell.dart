@@ -24,6 +24,7 @@ import '../customers/dialer_sheet.dart';
 import '../trials/book_trial_screen.dart';
 import '../development/development_screen.dart';
 import '../whatsapp/chats_screen.dart';
+import '../reports/daily_report_screen.dart';
 import 'more_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -242,7 +243,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // Keep call recording in step with the user's features whenever the profile changes.
     RecordingService.instance.bind(profile.user, enabled: profile.can('call_recordings'));
     if (!profile.workspaces.contains('sales')) {
-      if (profile.workspaces.contains('development')) return const _DevelopmentOnly();
+      if (profile.can('tasks') || profile.can('development') || profile.can('calendar')) return const _WorkHome();
       return _NoWorkspace(name: profile.fullName);
     }
     final wa = profile.can('whatsapp');
@@ -405,23 +406,40 @@ class _NoWorkspace extends StatelessWidget {
 }
 
 
-/// Developers (no sales work): their development tasks, with Settings and sign-out.
-class _DevelopmentOnly extends StatelessWidget {
-  const _DevelopmentOnly();
+/// People without sales work (accounts, marketing, HR, trainers, developers, CEO...):
+/// their tasks, development work, calendar (trainers), today's report and More.
+class _WorkHome extends StatefulWidget {
+  const _WorkHome();
+
+  @override
+  State<_WorkHome> createState() => _WorkHomeState();
+}
+
+class _WorkHomeState extends State<_WorkHome> {
+  int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(children: [
-      const DevelopmentScreen(showBack: false),
-      Positioned(
-        top: MediaQuery.paddingOf(context).top + 4,
-        right: 4,
-        child: IconButton(
-          tooltip: 'More',
-          icon: const Icon(Icons.more_vert),
-          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MoreScreen())),
-        ),
+    final p = context.watch<SessionController>().profile!;
+    final tabs = <(IconData, String, Widget)>[
+      if (p.can('calendar')) (Icons.calendar_month, 'Calendar', const CalendarScreen()),
+      if (p.can('tasks')) (Icons.task_alt, 'Tasks', const DevelopmentScreen(kind: 'team', showBack: false)),
+      if (p.can('development')) (Icons.code, 'Development', const DevelopmentScreen(showBack: false)),
+      if (p.can('daily_report')) (Icons.assignment_turned_in_outlined, 'My day', const DailyReportScreen()),
+      (Icons.more_horiz, 'More', const MoreScreen()),
+    ];
+    if (_tab >= tabs.length) _tab = 0;
+    return Scaffold(
+      body: IndexedStack(index: _tab, children: [for (final t in tabs) t.$3]),
+      bottomNavigationBar: BottomAppBar(
+        color: HsColors.background,
+        padding: EdgeInsets.zero,
+        height: 68,
+        child: Row(children: [
+          for (var i = 0; i < tabs.length; i++)
+            _NavItem(icon: tabs[i].$1, label: tabs[i].$2, selected: _tab == i, onTap: () => setState(() => _tab = i)),
+        ]),
       ),
-    ]);
+    );
   }
 }

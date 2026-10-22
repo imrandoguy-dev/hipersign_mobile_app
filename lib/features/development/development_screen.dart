@@ -8,6 +8,7 @@ import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../shared/models/development.dart';
+import '../../shared/widgets/attachments.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/reminder_picker.dart';
 
@@ -37,10 +38,12 @@ String deadlineText(DevTask t, {DateTime? now}) {
   return 'Due ${fmtDayTime(d)} (in $days days)';
 }
 
-/// Development work: mine, the ones I assigned, or the whole team's (managers).
+/// Development work (kind 'dev') or team tasks (kind 'team': accounts, marketing, hiring...):
+/// mine, the ones I assigned, or everyone's (managers).
 class DevelopmentScreen extends StatefulWidget {
-  const DevelopmentScreen({super.key, this.showBack = true});
+  const DevelopmentScreen({super.key, this.showBack = true, this.kind = 'dev'});
   final bool showBack;
+  final String kind;
 
   @override
   State<DevelopmentScreen> createState() => _DevelopmentScreenState();
@@ -49,6 +52,8 @@ class DevelopmentScreen extends StatefulWidget {
 class _DevelopmentScreenState extends State<DevelopmentScreen> {
   String _scope = 'mine';
   String _filter = 'open';
+  String? _team;
+  List<String> _teams = [];
   List<DevTask> _items = [];
   String? _next;
   int _late = 0;
@@ -72,10 +77,11 @@ class _DevelopmentScreenState extends State<DevelopmentScreen> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final p = await context.read<SessionController>().repo.devTasks(scope: _scope, filter: _filter);
+      final p = await context.read<SessionController>().repo.devTasks(scope: _scope, filter: _filter, kind: widget.kind, team: _team);
       if (!mounted) return;
       setState(() {
         _items = p.items;
+        if (p.teams.isNotEmpty) _teams = p.teams;
         _next = p.nextCursor;
         _late = p.late;
         _error = null;
@@ -90,7 +96,7 @@ class _DevelopmentScreenState extends State<DevelopmentScreen> {
   Future<void> _more() async {
     if (_next == null || _loading) return;
     try {
-      final p = await context.read<SessionController>().repo.devTasks(scope: _scope, filter: _filter, cursor: _next);
+      final p = await context.read<SessionController>().repo.devTasks(scope: _scope, filter: _filter, cursor: _next, kind: widget.kind, team: _team);
       if (mounted) setState(() {
         _items = [..._items, ...p.items];
         _next = p.nextCursor;
@@ -99,23 +105,24 @@ class _DevelopmentScreenState extends State<DevelopmentScreen> {
   }
 
   Future<void> _open(DevTask t) async {
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => DevTaskScreen(taskId: t.id)));
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => DevTaskScreen(taskId: t.id, kind: widget.kind)));
     _load();
   }
 
   @override
   Widget build(BuildContext context) {
     final p = context.watch<SessionController>().profile!;
-    final manager = p.can('assign_development');
+    final team = widget.kind == 'team';
+    final manager = p.can(team ? 'assign_tasks' : 'assign_development');
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: widget.showBack,
-        title: const Text('Development', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: Text(team ? 'Tasks' : 'Development', style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'dev-new',
+        heroTag: 'dev-new-${widget.kind}',
         onPressed: () async {
-          final t = await Navigator.push<DevTask>(context, MaterialPageRoute(builder: (_) => const DevTaskForm()));
+          final t = await Navigator.push<DevTask>(context, MaterialPageRoute(builder: (_) => DevTaskForm(kind: widget.kind, team: _team)));
           if (t != null) _load();
         },
         icon: const Icon(Icons.add),
@@ -158,6 +165,28 @@ class _DevelopmentScreenState extends State<DevelopmentScreen> {
                     Expanded(child: Text('$_late task${_late > 1 ? 's are' : ' is'} past the deadline')),
                   ]),
                 ),
+              if (team && _teams.isNotEmpty)
+                SizedBox(
+                  height: 48,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                    children: [
+                      for (final t in <String?>[null, ..._teams])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            label: Text(t ?? 'All teams'),
+                            selected: _team == t,
+                            onSelected: (_) {
+                              setState(() => _team = t);
+                              _load();
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               SizedBox(
                 height: 48,
                 child: ListView(
@@ -183,9 +212,13 @@ class _DevelopmentScreenState extends State<DevelopmentScreen> {
               if (_loading && _items.isEmpty) const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
               if (!_loading && _items.isEmpty && _error == null)
                 EmptyState(
-                  icon: Icons.code,
-                  title: _filter == 'late' ? 'Nothing is late' : 'No development tasks here',
-                  message: manager ? 'Use "Assign work" to give a task to a developer with a deadline.' : null,
+                  icon: team ? Icons.task_alt : Icons.code,
+                  title: _filter == 'late' ? 'Nothing is late' : (team ? 'No tasks here' : 'No development tasks here'),
+                  message: manager
+                      ? (team
+                          ? 'Use "Assign work" to give a task to anyone (accounts, marketing, hiring...) with a deadline.'
+                          : 'Use "Assign work" to give a task to a developer with a deadline.')
+                      : null,
                 ),
               for (final t in _items) _DevCard(task: t, showDeveloper: _scope != 'mine', onTap: () => _open(t)),
             ],
@@ -235,12 +268,14 @@ class _DevCard extends StatelessWidget {
                         style: TextStyle(fontSize: 13, color: t.late ? HsColors.danger : null, fontWeight: t.late ? FontWeight.w700 : null)),
                   ),
                 ]),
-                if (showDeveloper || t.project != null || t.priority == 'High' || t.priority == 'Urgent') ...[
+                if (showDeveloper || t.project != null || (t.team != null && t.kind == 'team') || t.attachments > 0 || t.priority == 'High' || t.priority == 'Urgent') ...[
                   const SizedBox(height: 4),
                   Text(
                     [
                       if (showDeveloper) t.developerName,
+                      if (t.kind == 'team' && t.team != null) t.team!,
                       if (t.project != null) t.project!,
+                      if (t.attachments > 0) '📎 ${t.attachments}',
                       if (t.priority == 'High' || t.priority == 'Urgent') '${t.priority} priority',
                     ].join(' · '),
                     style: const TextStyle(fontSize: 12.5),
@@ -269,8 +304,9 @@ class _Chip extends StatelessWidget {
 
 /// One development task: status, deadline, notes; edit when you assigned it.
 class DevTaskScreen extends StatefulWidget {
-  const DevTaskScreen({super.key, required this.taskId});
+  const DevTaskScreen({super.key, required this.taskId, this.kind = 'dev'});
   final String taskId;
+  final String kind;
 
   @override
   State<DevTaskScreen> createState() => _DevTaskScreenState();
@@ -288,7 +324,7 @@ class _DevTaskScreenState extends State<DevTaskScreen> {
 
   Future<void> _load() async {
     try {
-      final t = await context.read<SessionController>().repo.devTask(widget.taskId);
+      final t = await context.read<SessionController>().repo.devTask(widget.taskId, kind: widget.kind);
       if (mounted) setState(() {
         _t = t;
         _error = null;
@@ -300,7 +336,7 @@ class _DevTaskScreenState extends State<DevTaskScreen> {
 
   Future<void> _update(Map<String, dynamic> values, {String? success}) async {
     final repo = context.read<SessionController>().repo;
-    final t = await runWrite(context, () => repo.devUpdate(widget.taskId, values), success: success);
+    final t = await runWrite(context, () => repo.devUpdate(widget.taskId, values, kind: widget.kind), success: success);
     if (t != null) {
       bumpRefresh();
       _load();
@@ -335,14 +371,14 @@ class _DevTaskScreenState extends State<DevTaskScreen> {
     final t = _t;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Development task'),
+        title: Text(widget.kind == 'team' ? 'Task' : 'Development task'),
         actions: [
           if (t != null && t.canEdit)
             IconButton(
               tooltip: 'Edit',
               icon: const Icon(Icons.edit_outlined),
               onPressed: () async {
-                final saved = await Navigator.push<DevTask>(context, MaterialPageRoute(builder: (_) => DevTaskForm(task: t)));
+                final saved = await Navigator.push<DevTask>(context, MaterialPageRoute(builder: (_) => DevTaskForm(task: t, kind: widget.kind)));
                 if (saved != null) _load();
               },
             ),
@@ -370,7 +406,8 @@ class _DevTaskScreenState extends State<DevTaskScreen> {
                       const SizedBox(height: 8),
                       Text(deadlineText(t), style: TextStyle(fontWeight: FontWeight.w600, color: t.late ? HsColors.danger : null)),
                       const SizedBox(height: 4),
-                      Text('Developer: ${t.developerName}'),
+                      Text('${t.kind == 'team' ? 'Assigned to' : 'Developer'}: ${t.developerName}'),
+                      if (t.kind == 'team' && t.team != null) Text('Team: ${t.team}'),
                       if (t.assignedByName != null) Text('Assigned by: ${t.assignedByName}'),
                       if (t.project != null) Text('Project: ${t.project}'),
                       if (t.deadlineChanges > 0) Text('Deadline moved ${t.deadlineChanges} time${t.deadlineChanges > 1 ? 's' : ''}'),
@@ -380,10 +417,16 @@ class _DevTaskScreenState extends State<DevTaskScreen> {
                 ),
                 if (t.description != null) ...[
                   const SizedBox(height: 16),
-                  const Text('What to build', style: TextStyle(fontWeight: FontWeight.w700)),
+                  Text(t.kind == 'team' ? 'Details' : 'What to build', style: const TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   Text(t.description!, style: const TextStyle(height: 1.35)),
                 ],
+                const SizedBox(height: 16),
+                AttachmentsSection(
+                  key: ValueKey('att-${t.id}'),
+                  doctype: t.kind == 'team' ? 'Team Task' : 'Development Task',
+                  name: t.id,
+                ),
                 const SizedBox(height: 16),
                 if (t.isOpen) ...[
                   const Text('Status', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -438,8 +481,10 @@ class _DevTaskScreenState extends State<DevTaskScreen> {
 
 /// Assign new work (or edit it): title, details, developer, deadline, priority, reminders.
 class DevTaskForm extends StatefulWidget {
-  const DevTaskForm({super.key, this.task});
+  const DevTaskForm({super.key, this.task, this.kind = 'dev', this.team});
   final DevTask? task;
+  final String kind;
+  final String? team; // preselected team (team tasks)
 
   @override
   State<DevTaskForm> createState() => _DevTaskFormState();
@@ -454,6 +499,10 @@ class _DevTaskFormState extends State<DevTaskForm> {
   late List<int> _reminders = widget.task?.reminders ?? const [1440];
   String? _developer;
   List<Map<String, String>> _developers = [];
+  late String? _team = widget.task?.team ?? widget.team;
+  List<String> _teams = [];
+  List<PendingFile> _files = [];
+  bool get _isTeam => widget.kind == 'team';
 
   static DateTime _defaultDeadline() {
     final n = DateTime.now().add(const Duration(days: 3));
@@ -466,10 +515,11 @@ class _DevTaskFormState extends State<DevTaskForm> {
     _developer = widget.task?.developer;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        final list = await context.read<SessionController>().repo.developers();
+        final (list, teams) = await context.read<SessionController>().repo.developers(kind: widget.kind);
         if (!mounted) return;
         setState(() {
           _developers = list;
+          _teams = teams;
           _developer ??= list.length == 1 ? list.first['id'] : null;
         });
       } on ApiException catch (e) {
@@ -501,17 +551,17 @@ class _DevTaskFormState extends State<DevTaskForm> {
 
   Future<void> _save() async {
     if (_title.text.trim().isEmpty) {
-      showSnack('Enter a title.', error: true);
-      return;
+      return showMissing(context, 'Title missing', _isTeam ? 'Write what has to be done.' : 'Write what to build.');
     }
     if (_developer == null) {
-      showSnack('Choose the developer.', error: true);
-      return;
+      return showMissing(context, _isTeam ? 'Person not selected' : 'Developer not selected',
+          _isTeam ? 'Choose who will do this task.' : 'Choose the developer for this work.');
     }
     final values = {
       'title': _title.text.trim(),
       'description': _desc.text.trim(),
-      'project': _project.text.trim(),
+      if (!_isTeam) 'project': _project.text.trim(),
+      if (_isTeam) 'team': _team ?? '',
       'developer': _developer,
       'deadline': _deadline.toUtc().toIso8601String(),
       'priority': _priority,
@@ -521,9 +571,12 @@ class _DevTaskFormState extends State<DevTaskForm> {
     final task = widget.task;
     final saved = await runWrite(
       context,
-      () => task == null ? repo.devCreate(values) : repo.devUpdate(task.id, values),
+      () => task == null ? repo.devCreate(values, kind: widget.kind) : repo.devUpdate(task.id, values, kind: widget.kind),
       success: task == null ? 'Task assigned' : 'Saved',
     );
+    if (saved != null && _files.isNotEmpty) {
+      await uploadPending(repo, _isTeam ? 'Team Task' : 'Development Task', saved.id, _files);
+    }
     if (saved != null && mounted) {
       bumpRefresh();
       Navigator.pop(context, saved);
@@ -533,9 +586,13 @@ class _DevTaskFormState extends State<DevTaskForm> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.task == null ? 'Assign development work' : 'Edit task')),
+      appBar: AppBar(title: Text(widget.task == null ? (_isTeam ? 'Assign a task' : 'Assign development work') : 'Edit task')),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        TextField(controller: _title, textCapitalization: TextCapitalization.sentences, decoration: const InputDecoration(labelText: 'What to build')),
+        TextField(
+          controller: _title,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(labelText: _isTeam ? 'What has to be done' : 'What to build'),
+        ),
         const SizedBox(height: 12),
         TextField(
           controller: _desc,
@@ -544,13 +601,30 @@ class _DevTaskFormState extends State<DevTaskForm> {
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(labelText: 'Details (optional)', alignLabelWithHint: true),
         ),
-        const SizedBox(height: 12),
-        TextField(controller: _project, decoration: const InputDecoration(labelText: 'Project / client / module (optional)')),
+        if (widget.task == null) ...[
+          const SizedBox(height: 12),
+          PendingAttachments(files: _files, onChanged: (f) => setState(() => _files = f)),
+        ],
+        if (!_isTeam) ...[
+          const SizedBox(height: 12),
+          TextField(controller: _project, decoration: const InputDecoration(labelText: 'Project / client / module (optional)')),
+        ],
+        if (_isTeam) ...[
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String?>(
+            key: ValueKey('teams-${_teams.length}'),
+            initialValue: _teams.contains(_team) ? _team : null,
+            decoration: const InputDecoration(labelText: 'Team'),
+            items: [for (final t in _teams) DropdownMenuItem(value: t, child: Text(t))],
+            onChanged: (v) => setState(() => _team = v),
+          ),
+        ],
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           key: ValueKey('devs-${_developers.length}'),
           initialValue: _developers.any((d) => d['id'] == _developer) ? _developer : null,
-          decoration: const InputDecoration(labelText: 'Developer'),
+          isExpanded: true,
+          decoration: InputDecoration(labelText: _isTeam ? 'Assign to' : 'Developer'),
           items: [for (final d in _developers) DropdownMenuItem(value: d['id'], child: Text(d['name']!))],
           onChanged: (v) => setState(() => _developer = v),
         ),
@@ -566,7 +640,7 @@ class _DevTaskFormState extends State<DevTaskForm> {
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.notifications_active_outlined),
-          title: const Text('Remind the developer'),
+          title: Text(_isTeam ? 'Remind them' : 'Remind the developer'),
           subtitle: Text(_reminders.where((m) => m > 0).isEmpty ? 'Only when the deadline is crossed' : describeReminders(_reminders.where((m) => m > 0).toList())),
           trailing: const Icon(Icons.chevron_right),
           onTap: () async {
@@ -582,9 +656,9 @@ class _DevTaskFormState extends State<DevTaskForm> {
             ChoiceChip(label: Text(p), selected: _priority == p, onSelected: (_) => setState(() => _priority = p)),
         ]),
         const SizedBox(height: 12),
-        const Text(
-          'The developer is told now, reminded before the deadline, and if it isn\'t done by the deadline you both get a "deadline crossed" alert - then every morning until it\'s done.',
-          style: TextStyle(color: HsColors.textSecondary, fontSize: 12.5),
+        Text(
+          '${_isTeam ? 'They are' : 'The developer is'} told now, reminded before the deadline, and if it isn\'t done by the deadline you both get a "deadline crossed" alert - then every morning until it\'s done.',
+          style: const TextStyle(color: HsColors.textSecondary, fontSize: 12.5),
         ),
         const SizedBox(height: 16),
         FilledButton(onPressed: _save, child: Text(widget.task == null ? 'Assign' : 'Save')),

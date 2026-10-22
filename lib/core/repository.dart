@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../shared/models/calls.dart';
 import '../shared/models/development.dart';
+import '../shared/models/team.dart';
 import '../shared/models/models.dart';
 import '../shared/models/whatsapp.dart';
 import 'api/api_client.dart';
@@ -205,6 +206,12 @@ class Repository {
     return (((data as Map)['items'] as List?) ?? const [])
         .map((e) => {'id': (e as Map)['id'].toString(), 'name': e['name'].toString()})
         .toList();
+  }
+
+  /// Checks an exact time typed by hand (e.g. 10:15 - 11:30) and returns it as a bookable slot.
+  Future<TrainerSlot> checkTrainerTime(String trainer, DateTime start, DateTime end) async {
+    final data = await api.get('trials.check_time', {'trainer': trainer, 'start': iso(start), 'end': iso(end)});
+    return TrainerSlot.fromJson(Map<String, dynamic>.from(data as Map));
   }
 
   Future<List<TrainerSlot>> slots(DateTime from, DateTime to, {String? trainer, String? bookingType}) async {
@@ -493,34 +500,130 @@ class Repository {
 
   // ------------------------------------------------------------ development tasks
 
-  Future<DevPage> devTasks({String scope = 'mine', String filter = 'open', String? cursor}) async {
-    final params = {'scope': scope, 'filter': filter, 'cursor': cursor, 'page_size': 40};
+  Future<DevPage> devTasks({String scope = 'mine', String filter = 'open', String? cursor, String kind = 'dev', String? team}) async {
+    final params = {'scope': scope, 'filter': filter, 'cursor': cursor, 'page_size': 30, 'kind': kind, 'team': team};
+    final key = 'dev:$kind:$scope:$filter:${team ?? ''}';
     final data = Map<String, dynamic>.from(
-        (cursor == null ? await fetch('dev:$scope:$filter', 'development.list_tasks', params) : await api.get('development.list_tasks', params))
-            as Map);
+        (cursor == null ? await fetch(key, 'development.list_tasks', params) : await api.get('development.list_tasks', params)) as Map);
     final counts = Map<String, dynamic>.from((data['counts'] as Map?) ?? const {});
     return DevPage(
       ((data['items'] as List?) ?? const []).map((e) => DevTask.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
-      str(data['next_cursor']),
+      data['next_cursor']?.toString(),
       (counts['open'] as num?)?.toInt() ?? 0,
       (counts['late'] as num?)?.toInt() ?? 0,
+      teams: ((data['teams'] as List?) ?? const []).map((e) => e.toString()).toList(),
     );
   }
 
-  Future<DevTask> devTask(String id) async =>
-      DevTask.fromJson(Map<String, dynamic>.from(await api.get('development.get_task', {'task_id': id}) as Map));
+  Future<DevTask> devTask(String id, {String kind = 'dev'}) async =>
+      DevTask.fromJson(Map<String, dynamic>.from(await api.get('development.get_task', {'task_id': id, 'kind': kind}) as Map));
 
-  Future<List<Map<String, String>>> developers() async {
-    final data = Map<String, dynamic>.from(await api.get('development.developers') as Map);
-    return ((data['items'] as List?) ?? const [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .map((e) => {'id': e['id'].toString(), 'name': e['name'].toString()})
+  /// People who can get this kind of work, and (team tasks) the teams.
+  Future<(List<Map<String, String>>, List<String>)> developers({String kind = 'dev'}) async {
+    final data = Map<String, dynamic>.from(await api.get('development.developers', {'kind': kind}) as Map);
+    final people = ((data['items'] as List?) ?? const [])
+        .map((e) => {'id': (e as Map)['id'].toString(), 'name': e['name'].toString()})
         .toList();
+    return (people, ((data['teams'] as List?) ?? const []).map((e) => e.toString()).toList());
   }
 
-  Future<DevTask> devCreate(Map<String, dynamic> values) async =>
-      DevTask.fromJson(Map<String, dynamic>.from(await api.post('development.create_task', values) as Map));
+  Future<DevTask> devCreate(Map<String, dynamic> values, {String kind = 'dev'}) async =>
+      DevTask.fromJson(Map<String, dynamic>.from(await api.post('development.create_task', {...values, 'kind': kind}) as Map));
 
-  Future<DevTask> devUpdate(String id, Map<String, dynamic> values) async => DevTask.fromJson(
-      Map<String, dynamic>.from(await api.post('development.update_task', {'task_id': id, ...values}) as Map));
+  Future<DevTask> devUpdate(String id, Map<String, dynamic> values, {String kind = 'dev'}) async => DevTask.fromJson(
+      Map<String, dynamic>.from(await api.post('development.update_task', {'task_id': id, ...values, 'kind': kind}) as Map));
+
+  // ------------------------------------------------------------ files & voice notes
+
+  Future<List<Attachment>> attachments(String doctype, String name) async =>
+      attachmentsFrom((await api.get('attachments.list_files', {'doctype': doctype, 'name': name}) as Map)['items']);
+
+  Future<Attachment> uploadAttachment(String doctype, String name, String path, {bool voice = false}) async =>
+      Attachment.fromJson(Map<String, dynamic>.from(
+          await api.upload('attachments.upload', {'doctype': doctype, 'name': name, if (voice) 'voice': 1}, path) as Map));
+
+  Future<void> deleteAttachment(String id) => api.post('attachments.delete_file', {'file_id': id});
+
+  Future<String> attachmentFile(Attachment a) async {
+    final path = '${Directory.systemTemp.path}/hm-att-${a.id}.${a.ext.replaceAll(RegExp(r'[^a-z0-9]'), '')}';
+    final f = File(path);
+    if (await f.exists() && await f.length() > 0) return path;
+    await api.downloadTo('attachments.file', {'file_id': a.id}, path, what: 'file');
+    return path;
+  }
+
+  // ------------------------------------------------------------ app suggestions
+
+  Future<PageResult<Suggestion>> suggestions({String filter = 'open', String sort = 'top', String? cursor}) async {
+    final data = Map<String, dynamic>.from(await api.get('feedback.list_feedback', {'filter': filter, 'sort': sort, 'cursor': cursor, 'page_size': 30}) as Map);
+    return PageResult(
+      ((data['items'] as List?) ?? const []).map((e) => Suggestion.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+      data['next_cursor']?.toString(),
+    );
+  }
+
+  Future<Suggestion> suggestion(String id) async =>
+      Suggestion.fromJson(Map<String, dynamic>.from(await api.get('feedback.get_feedback', {'feedback_id': id}) as Map));
+
+  Future<Suggestion> createSuggestion(Map<String, dynamic> values) async =>
+      Suggestion.fromJson(Map<String, dynamic>.from(await api.post('feedback.create_feedback', values) as Map));
+
+  Future<Suggestion> voteSuggestion(String id) async =>
+      Suggestion.fromJson(Map<String, dynamic>.from(await api.post('feedback.vote', {'feedback_id': id}) as Map));
+
+  Future<Suggestion> updateSuggestion(String id, Map<String, dynamic> values) async =>
+      Suggestion.fromJson(Map<String, dynamic>.from(await api.post('feedback.update_feedback', {'feedback_id': id, ...values}) as Map));
+
+  // ------------------------------------------------------------ concerns
+
+  Future<Map<String, dynamic>> concernOptions() async => Map<String, dynamic>.from(await api.get('concerns.options') as Map);
+
+  Future<PageResult<Concern>> concerns({String scope = 'mine', String? cursor}) async {
+    final data = Map<String, dynamic>.from(await api.get('concerns.list_concerns', {'scope': scope, 'cursor': cursor, 'page_size': 30}) as Map);
+    return PageResult(
+      ((data['items'] as List?) ?? const []).map((e) => Concern.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+      data['next_cursor']?.toString(),
+    );
+  }
+
+  Future<Concern> concern(String id) async =>
+      Concern.fromJson(Map<String, dynamic>.from(await api.get('concerns.get_concern', {'concern_id': id}) as Map));
+
+  Future<Concern> createConcern(Map<String, dynamic> values) async =>
+      Concern.fromJson(Map<String, dynamic>.from(await api.post('concerns.create_concern', values) as Map));
+
+  Future<Concern> respondConcern(String id, {String? response, String? status}) async => Concern.fromJson(
+      Map<String, dynamic>.from(await api.post('concerns.respond', {'concern_id': id, 'response': response, 'status': status}) as Map));
+
+  Future<Concern> addToConcern(String id, String text) async =>
+      Concern.fromJson(Map<String, dynamic>.from(await api.post('concerns.add_detail', {'concern_id': id, 'text': text}) as Map));
+
+  // ------------------------------------------------------------ call targets
+
+  Future<TargetProgress?> myTarget() async {
+    final data = Map<String, dynamic>.from(await fetch('target:mine', 'targets.my_target', const {}) as Map);
+    return TargetProgress.fromJson(data['target']);
+  }
+
+  TargetProgress? cachedTarget() {
+    final c = cache.read('target:mine');
+    return c == null ? null : TargetProgress.fromJson((c.data as Map)['target']);
+  }
+
+  Future<List<CallerTarget>> callerTargets() async {
+    final data = Map<String, dynamic>.from(await api.get('targets.list_targets') as Map);
+    return ((data['items'] as List?) ?? const []).map((e) => CallerTarget.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  Future<void> saveCallerTarget(Map<String, dynamic> values) => api.post('targets.save_target', values);
+
+  // ------------------------------------------------------------ daily report
+
+  Future<DailyReport> dailyReport(DateTime day, {String? user}) async => DailyReport.fromJson(
+      Map<String, dynamic>.from(await api.get('reports.get_report', {'date': ymd(day), 'user': user}) as Map));
+
+  Future<List<DailyReport>> teamReport(DateTime day) async {
+    final data = Map<String, dynamic>.from(await api.get('reports.team_report', {'date': ymd(day)}) as Map);
+    return ((data['items'] as List?) ?? const []).map((e) => DailyReport.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
 }

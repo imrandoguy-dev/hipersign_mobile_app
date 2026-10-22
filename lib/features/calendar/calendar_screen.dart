@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../targets/targets.dart';
 import '../../app/refresh.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
@@ -12,6 +13,7 @@ import '../../shared/models/models.dart';
 import '../../shared/widgets/activity_card.dart';
 import '../../shared/widgets/common.dart';
 import '../activities/activity_detail_screen.dart';
+import '../targets/targets.dart';
 
 enum CalView { day, week, month }
 
@@ -197,6 +199,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             ),
           ),
+          if (context.watch<SessionController>().profile?.can('call_target') ?? false)
+            const SliverToBoxAdapter(child: TargetBanner()),
           if (_view == CalView.day) SliverToBoxAdapter(child: _dateStrip()),
           SliverToBoxAdapter(child: SyncBanner(syncedAt: _syncedAt, error: _error)),
           if (_loading && _data == null && _view != CalView.month)

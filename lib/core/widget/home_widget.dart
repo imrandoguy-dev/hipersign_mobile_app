@@ -39,13 +39,22 @@ Future<void> updateHomeWidget(Repository repo) async {
         ],
       });
     }
-    final earlier = d.overdue.where((a) => a.start != null && a.start!.isBefore(day)).length;
+    // Open work from earlier days stays on the widget (newest first) until it is done.
+    final earlier = d.overdue.where((a) => a.isOpen && a.start != null && a.start!.isBefore(day)).toList()
+      ..sort((a, b) => b.start!.compareTo(a.start!));
     await _channel.invokeMethod('updateWidget', {
       'json': jsonEncode({
         'date': DateFormat('yyyy-MM-dd').format(day),
         'days': days,
         'open_today': days.isEmpty ? 0 : (days.first['items'] as List).where((x) => x['done'] != true).length,
-        'overdue_before': earlier,
+        'overdue_before': earlier.length,
+        'overdue': [
+          for (final a in earlier)
+            {
+              'time': DateFormat('d MMM').format(a.start!),
+              'text': a.party != null && a.party!.name.isNotEmpty ? '${a.title} · ${a.party!.name}' : a.title,
+            },
+        ],
         'updated': DateFormat.jm().format(now),
       }),
     });

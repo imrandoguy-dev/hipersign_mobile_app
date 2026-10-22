@@ -196,7 +196,7 @@ class Activity {
 }
 
 class TrainerSlot {
-  TrainerSlot({required this.id, required this.trainer, required this.trainerName, required this.start, required this.end, this.slotType, this.location, this.meetingLink});
+  TrainerSlot({required this.id, required this.trainer, required this.trainerName, required this.start, required this.end, this.slotType, this.location, this.meetingLink, this.note});
 
   final String id;
   final String trainer;
@@ -206,6 +206,7 @@ class TrainerSlot {
   final String? slotType;
   final String? location;
   final String? meetingLink;
+  final String? note; // e.g. "Outside the trainer's working hours" for an exact time
 
   factory TrainerSlot.fromJson(Map<String, dynamic> j) => TrainerSlot(
         id: j['id'].toString(),
@@ -216,6 +217,7 @@ class TrainerSlot {
         slotType: str(j['slot_type']),
         location: str(j['location']),
         meetingLink: str(j['meeting_link']),
+        note: str(j['note']),
       );
 }
 
@@ -226,6 +228,7 @@ class Booking {
     required this.bookingType,
     required this.partyName,
     this.party,
+    this.trainer,
     this.trainerName,
     this.start,
     this.end,
@@ -241,6 +244,7 @@ class Booking {
   final String bookingType;
   final String partyName;
   final Party? party;
+  final String? trainer;
   final String? trainerName;
   final DateTime? start;
   final DateTime? end;
@@ -265,6 +269,7 @@ class Booking {
         bookingType: j['booking_type']?.toString() ?? '',
         partyName: j['party_name']?.toString() ?? '',
         party: j['party'] is Map ? Party.fromJson(Map<String, dynamic>.from(j['party'] as Map)) : null,
+        trainer: str(j['trainer']),
         trainerName: str(j['trainer_name']),
         start: parseDate(j['start']),
         end: parseDate(j['end']),
@@ -334,13 +339,14 @@ class TrialPeriod {
 }
 
 class TrialSession {
-  TrialSession({required this.id, required this.status, this.sessionNo, this.start, this.end});
+  TrialSession({required this.id, required this.status, this.sessionNo, this.start, this.end, this.trainer});
 
   final String id;
   final String status;
   final int? sessionNo;
   final DateTime? start;
   final DateTime? end;
+  final String? trainer;
 
   bool get isActive => status == 'Booked' || status == 'Rescheduled' || status == 'Pending Confirmation';
 
@@ -350,6 +356,7 @@ class TrialSession {
         sessionNo: (j['session_no'] as num?)?.toInt(),
         start: parseDate(j['start']),
         end: parseDate(j['end']),
+        trainer: str(j['trainer']),
       );
 }
 
