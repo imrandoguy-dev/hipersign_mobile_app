@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../shared/models/calls.dart';
 import '../shared/models/development.dart';
+import '../shared/models/sales.dart';
 import '../shared/models/team.dart';
 import '../shared/models/models.dart';
 import '../shared/models/whatsapp.dart';
@@ -178,6 +179,44 @@ class Repository {
   Future<Map<String, dynamic>> partyDetail(String doctype, String name) async {
     final data = await api.get('customers.get_detail', {'doctype': doctype, 'name': name});
     return Map<String, dynamic>.from(data as Map);
+  }
+
+  // ------------------------------------------------------------ quotations
+
+  Future<(List<QuoteCompany>, String?)> quoteOptions() async {
+    final d = Map<String, dynamic>.from(await api.get('quotations.options') as Map);
+    final companies = ((d['companies'] as List?) ?? const []).map((e) {
+      final c = Map<String, dynamic>.from(e as Map);
+      return QuoteCompany(
+        name: c['name'].toString(),
+        currency: c['currency']?.toString() ?? '',
+        taxes: ((c['taxes'] as List?) ?? const []).map((t) => t.toString()).toList(),
+        defaultTax: str(c['default_tax']),
+      );
+    }).toList();
+    return (companies, str(d['default_company']));
+  }
+
+  Future<List<QuoteLine>> quoteItems(String query, String? company) async {
+    final d = Map<String, dynamic>.from(await api.get('quotations.items', {'query': query, 'company': company}) as Map);
+    return ((d['items'] as List?) ?? const []).map((e) => QuoteLine.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  }
+
+  Future<Quote> createQuote(Map<String, dynamic> values) async =>
+      Quote.fromJson(Map<String, dynamic>.from(await api.post('quotations.create', values) as Map));
+
+  Future<Quote> quote(String id) async =>
+      Quote.fromJson(Map<String, dynamic>.from(await api.get('quotations.get_quotation', {'quotation_id': id}) as Map));
+
+  Future<Quote> submitQuote(String id) async =>
+      Quote.fromJson(Map<String, dynamic>.from(await api.post('quotations.submit', {'quotation_id': id}) as Map));
+
+  Future<void> sendQuoteWhatsApp(String id, String phone) => api.post('quotations.send_whatsapp', {'quotation_id': id, 'phone': phone});
+
+  Future<String> quotePdf(String id) async {
+    final path = '${Directory.systemTemp.path}/$id-${DateTime.now().millisecondsSinceEpoch}.pdf';
+    await api.downloadTo('quotations.pdf', {'quotation_id': id}, path, what: 'quotation');
+    return path;
   }
 
   // ------------------------------------------------------------ trials

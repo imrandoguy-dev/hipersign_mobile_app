@@ -11,12 +11,14 @@ import '../../core/auth/session.dart';
 import '../../core/recordings/recording_service.dart';
 import '../../shared/maps/maps_links.dart';
 import '../../shared/models/models.dart';
+import '../../shared/models/sales.dart';
 import '../../shared/widgets/activity_card.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../activities/activity_detail_screen.dart';
 import '../activities/activity_form.dart';
 import '../notes/notes.dart';
+import '../quotations/quotation_screens.dart';
 import '../recordings/recording_widgets.dart';
 import '../recordings/recordings_screen.dart';
 import '../trials/book_trial_screen.dart';
@@ -37,6 +39,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   Party? _party;
   List<Activity> _activities = [];
   Activity? _next;
+  Journey? _journey;
   ApiException? _error;
   bool _loading = true;
   List<CallRecording> _recordings = [];
@@ -146,6 +149,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
             .map((e) => Activity.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
         _next = d['next_activity'] is Map ? Activity.fromJson(Map<String, dynamic>.from(d['next_activity'] as Map)) : null;
+        _journey = Journey.fromJson(d['journey']);
         _error = null;
       });
       _loadRecordings();
@@ -233,9 +237,19 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                     ..._locationRows(p),
                   ]),
                 ),
+                if (_journey != null) JourneyCard(journey: _journey!),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Wrap(spacing: 8, runSpacing: 8, children: [
+                    if (profile.can('quotations'))
+                      ActionChip(
+                        avatar: const Icon(Icons.request_quote_outlined, size: 18),
+                        label: const Text('Quotation'),
+                        onPressed: () async {
+                          await Navigator.push(context, MaterialPageRoute(builder: (_) => QuotationForm(party: p)));
+                          _load();
+                        },
+                      ),
                     ActionChip(
                       avatar: const Icon(Icons.note_add_outlined, size: 18),
                       label: const Text('Note'),
@@ -270,6 +284,25 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                       ),
                   ]),
                 ),
+                if (_journey != null && _journey!.quotations.isNotEmpty) ...[
+                  SectionHeader('Quotations', count: _journey!.quotations.length),
+                  for (final q in _journey!.quotations)
+                    Card(
+                      elevation: 0,
+                      color: HsColors.card,
+                      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      child: ListTile(
+                        leading: const Icon(Icons.request_quote_outlined, color: HsColors.navy),
+                        title: Text(q.id),
+                        subtitle: Text([q.status, if (q.date != null) fmtDay(q.date!)].join(' · ')),
+                        trailing: Text(q.totalText, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        onTap: () async {
+                          await Navigator.push(context, MaterialPageRoute(builder: (_) => QuotationScreen(id: q.id, party: p)));
+                          _load();
+                        },
+                      ),
+                    ),
+                ],
                 ..._notesSection(p),
                 if (_next != null) ...[
                   const SectionHeader('Next activity'),

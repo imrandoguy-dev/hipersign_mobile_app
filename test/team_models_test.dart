@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hipersign_mobile_app/shared/models/development.dart';
+import 'package:hipersign_mobile_app/shared/models/sales.dart';
 import 'package:hipersign_mobile_app/shared/models/team.dart';
 
 void main() {
@@ -31,5 +32,21 @@ void main() {
     expect(a.ext, 'm4a');
     final t = DevTask.fromJson({'id': 'TASK-1', 'kind': 'team', 'team': 'Hiring', 'title': 'Post job ad', 'attachments': 2});
     expect((t.kind, t.team, t.attachments), ('team', 'Hiring', 2));
+  });
+
+  test('customer stage', () {
+    final j = Journey.fromJson({
+      'stage': {'key': 'training', 'label': 'In training', 'state': 'active', 'detail': 'Day 2 of 5 · with Megha'},
+      'steps': [
+        {'key': 'lead', 'label': 'Lead', 'state': 'done'},
+        {'key': 'training', 'label': 'Training', 'state': 'active'},
+      ],
+      'quotations': [
+        {'id': 'SAL-QTN-1', 'status': 'Open', 'date': '2026-10-22', 'total_text': '₹ 15,000.00'},
+      ],
+    })!;
+    expect(j.stage!.label, 'In training');
+    expect(j.quotations.single.id, 'SAL-QTN-1');
+    expect(Journey.fromJson(null), isNull);
   });
 }
