@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
@@ -348,6 +350,44 @@ class _QuotationScreenState extends State<QuotationScreen> {
     }
   }
 
+  Future<String?> _pickPhone({bool allowNone = false}) async {
+    final phones = widget.party?.phones.where((p) => p.valid && p.e164 != null).toList() ?? [];
+    if (phones.isEmpty) return allowNone ? '' : null;
+    if (phones.length == 1) return phones.first.e164;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Send to'),
+        children: [for (final p in phones) SimpleDialogOption(onPressed: () => Navigator.pop(ctx, p.e164), child: Text(p.e164!))],
+      ),
+    );
+  }
+
+  /// The phone's own WhatsApp: opens the customer's chat with the PDF attached.
+  Future<void> _phoneWhatsapp() async {
+    final phone = await _pickPhone(allowNone: true);
+    if (phone == null || !mounted) return;
+    final q = _q!;
+    setState(() => _pdfBusy = true);
+    try {
+      final path = await context.read<SessionController>().repo.quotePdf(widget.id);
+      await const MethodChannel('hipersign/phone').invokeMethod('shareFile', {
+        'path': path,
+        'mime': 'application/pdf',
+        'whatsapp': true,
+        'phone': phone,
+        'text': 'Quotation ${q.id} - ${q.totalText}',
+      });
+      if (phone.isEmpty) showSnack('Pick the chat in WhatsApp to send the quotation.');
+    } on ApiException catch (e) {
+      showSnack(e.message, error: true);
+    } on PlatformException catch (e) {
+      showSnack(e.code == 'NO_WHATSAPP' ? 'WhatsApp is not installed on this phone.' : (e.message ?? 'Could not open WhatsApp.'), error: true);
+    } finally {
+      if (mounted) setState(() => _pdfBusy = false);
+    }
+  }
+
   Future<void> _whatsapp() async {
     final phones = widget.party?.phones.where((p) => p.valid && p.e164 != null).toList() ?? [];
     String? phone = phones.isNotEmpty ? phones.first.e164 : null;
@@ -422,13 +462,21 @@ class _QuotationScreenState extends State<QuotationScreen> {
                 icon: _pdfBusy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.picture_as_pdf_outlined),
                 label: const Text('Open PDF'),
               ),
-              if (wa && widget.party != null) ...[
+              if (Platform.isAndroid) ...[
                 const SizedBox(height: 8),
                 FilledButton.icon(
                   style: FilledButton.styleFrom(backgroundColor: HsColors.whatsapp),
+                  onPressed: _pdfBusy ? null : _phoneWhatsapp,
+                  icon: const Icon(Icons.phone_android),
+                  label: const Text('Send from my phone\'s WhatsApp'),
+                ),
+              ],
+              if (wa && widget.party != null) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
                   onPressed: _whatsapp,
-                  icon: const Icon(Icons.chat_outlined),
-                  label: const Text('Send PDF on WhatsApp'),
+                  icon: const Icon(Icons.chat_outlined, color: HsColors.whatsapp),
+                  label: const Text('Send from company WhatsApp'),
                 ),
               ],
               if (!q.submitted) ...[

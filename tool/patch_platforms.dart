@@ -125,6 +125,16 @@ void _androidManifest() {
     s = s.replaceFirst('</application>', '$receiver    </application>');
   }
 
+  if (!s.contains('HmFileProvider')) {
+    const provider = '''
+        <provider android:name=".HmFileProvider" android:authorities="\${applicationId}.hmfiles"
+            android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/hm_file_paths" />
+        </provider>
+''';
+    s = s.replaceFirst('</application>', '$provider    </application>');
+  }
+
   if (!s.contains('HipersignWidget')) {
     const widget = '''
         <receiver android:name=".HipersignWidget" android:exported="true" android:label="Hipersign calendar">
@@ -168,6 +178,16 @@ void _androidManifest() {
       s = s.replaceFirst('<queries>', '<queries>\n$intents');
     } else {
       s = s.replaceFirst('</manifest>', '    <queries>\n$intents    </queries>\n</manifest>');
+    }
+  }
+
+  if (!s.contains('<package android:name="com.whatsapp"')) {
+    // Send quotations to the phone's WhatsApp / WhatsApp Business.
+    const apps = '        <package android:name="com.whatsapp" />\n        <package android:name="com.whatsapp.w4b" />\n';
+    if (s.contains('<queries>')) {
+      s = s.replaceFirst('<queries>', '<queries>\n$apps');
+    } else {
+      s = s.replaceFirst('</manifest>', '    <queries>\n$apps    </queries>\n</manifest>');
     }
   }
 
@@ -339,12 +359,22 @@ void _androidMainActivity() {
     return;
   }
   final current = file.readAsStringSync();
-  if (current.contains('pinWidget')) return;
+  if (current.contains('shareFile')) return;
   final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true).firstMatch(current)?[1] ?? 'com.hipersign.hipersign_mobile_app';
   final code = _mainActivity.replaceFirst('__PACKAGE__', pkg);
   _write(file.path, code, 'MainActivity.kt (direct calling)');
   _write('${file.parent.path}/CallerId.kt', _callerId.replaceFirst('__PACKAGE__', pkg), 'CallerId.kt (caller pop-up)');
+  _write('${file.parent.path}/HmFileProvider.kt', 'package $pkg\n\n// Own FileProvider class, so it never clashes with a plugin\'s provider.\nclass HmFileProvider : androidx.core.content.FileProvider()\n', 'HmFileProvider.kt (share files)');
+  Directory('android/app/src/main/res/xml').createSync(recursive: true);
+  _write('android/app/src/main/res/xml/hm_file_paths.xml', _filePaths, 'file paths for sharing');
 }
+
+const _filePaths = '''<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="cache" path="." />
+    <files-path name="files" path="." />
+</paths>
+''';
 
 const _mainActivity = r'''
 package __PACKAGE__
@@ -556,6 +586,47 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         pendingDocResult = null
                         result.error("NO_PICKER", "No file picker on this phone", null)
+                    }
+                }
+                "shareFile" -> {
+                    // Share a file (e.g. a quotation PDF) - to the phone's WhatsApp when asked,
+                    // straight into the customer's chat when their number is given.
+                    try {
+                        val path = call.argument<String>("path") ?: ""
+                        val mime = call.argument<String>("mime") ?: "application/octet-stream"
+                        val text = call.argument<String>("text")
+                        val digits = (call.argument<String>("phone") ?: "").filter { it.isDigit() }
+                        val whatsapp = call.argument<Boolean>("whatsapp") ?: false
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            this, "${packageName}.hmfiles", File(path)
+                        )
+                        val intent = Intent(Intent.ACTION_SEND)
+                            .setType(mime)
+                            .putExtra(Intent.EXTRA_STREAM, uri)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        if (!text.isNullOrBlank()) intent.putExtra(Intent.EXTRA_TEXT, text)
+                        var app: String? = null
+                        if (whatsapp) {
+                            for (p in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+                                try {
+                                    packageManager.getPackageInfo(p, 0)
+                                    app = p
+                                    break
+                                } catch (e: Exception) {}
+                            }
+                            if (app == null) {
+                                result.error("NO_WHATSAPP", "WhatsApp is not installed on this phone", null)
+                                return@setMethodCallHandler
+                            }
+                            intent.setPackage(app)
+                            if (digits.length >= 8) intent.putExtra("jid", "$digits@s.whatsapp.net")
+                            startActivity(intent)
+                        } else {
+                            startActivity(Intent.createChooser(intent, "Share"))
+                        }
+                        result.success(app ?: "chooser")
+                    } catch (e: Exception) {
+                        result.error("SHARE_FAILED", e.message, null)
                     }
                 }
                 "updateWidget" -> {
