@@ -191,7 +191,7 @@ class _TargetSheetState extends State<_TargetSheet> {
   late TimeOfDay _start = _parse(widget.t.workStart, const TimeOfDay(hour: 9, minute: 30));
   late TimeOfDay _end = _parse(widget.t.workEnd, const TimeOfDay(hour: 18, minute: 0));
   // What counts towards the target: all / connected / new connected calls.
-  late String _count = widget.t.connectedOnly && widget.t.newOnly
+  late String _count = !widget.t.enabled || (widget.t.connectedOnly && widget.t.newOnly)
       ? 'new_connected'
       : (widget.t.connectedOnly ? 'connected' : (widget.t.newOnly ? 'new' : 'all'));
   late final _meetings = TextEditingController(text: widget.t.meetingTarget > 0 ? '${widget.t.meetingTarget}' : '');
