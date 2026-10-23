@@ -129,7 +129,8 @@ class _CallsScreenState extends State<CallsScreen> {
 
   /// "New leads not reached (12)" - how many to call back.
   String _chipLabel(String key, String label) {
-    final n = key == 'new_not_reached' ? _today?['new_not_reached'] : (key == 'not_reached' ? _today?['not_reached'] : null);
+    final today = _today;
+    final n = (key == 'new_not_reached' || key == 'not_reached') && today != null ? today[key] : null;
     return n == null || n == 0 ? label : '$label ($n)';
   }
 
