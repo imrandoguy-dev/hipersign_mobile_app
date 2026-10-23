@@ -4,7 +4,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../widget/home_widget.dart';
 
 /// "Rings like an alarm": alarm sound on the alarm volume, long vibration, and it keeps
 /// ringing until it is opened or swiped away (Android's "insistent" flag) - used for the
@@ -75,7 +74,6 @@ Future<void> showAlarmFromData(FlutterLocalNotificationsPlugin plugin, Map<Strin
 Future<void> hipersignBackgroundMessage(RemoteMessage message) async {
   if (message.data['alarm'] != '1') return; // normal pushes are shown by Android itself
   WidgetsFlutterBinding.ensureInitialized();
-  await widgetAlertFromPush(Map<String, dynamic>.from(message.data));
   final plugin = FlutterLocalNotificationsPlugin();
   await plugin.initialize(
     settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),

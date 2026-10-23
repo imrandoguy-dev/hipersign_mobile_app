@@ -135,6 +135,18 @@ void _androidManifest() {
     s = s.replaceFirst('</application>', '$provider    </application>');
   }
 
+  if (!s.contains('HmPushReceiver')) {
+    const push = '''
+        <receiver android:name=".HmPushReceiver" android:exported="true"
+            android:permission="com.google.android.c2dm.permission.SEND">
+            <intent-filter>
+                <action android:name="com.google.android.c2dm.intent.RECEIVE" />
+            </intent-filter>
+        </receiver>
+''';
+    s = s.replaceFirst('</application>', '$push    </application>');
+  }
+
   if (!s.contains('HipersignWidget')) {
     const widget = '''
         <receiver android:name=".HipersignWidget" android:exported="true" android:label="Hipersign calendar">
@@ -1408,7 +1420,38 @@ void _androidHomeWidget() {
   _write('$res/drawable/hm_widget_pill.xml', _widgetPill, 'widget row background');
   _write('$res/xml/hm_widget_info.xml', _widgetInfo, 'widget info');
   _write('${main.parent.path}/HipersignWidget.kt', _widgetKt.replaceFirst('__PACKAGE__', pkg), 'HipersignWidget.kt (home screen widget)');
+  _write('${main.parent.path}/HmPushReceiver.kt', _pushReceiverKt.replaceFirst('__PACKAGE__', pkg), 'HmPushReceiver.kt (widget alert from push)');
 }
+
+const _pushReceiverKt = r'''
+package __PACKAGE__
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import org.json.JSONObject
+
+/// Sees Hipersign's pushes next to Firebase (which still shows them): a "No calls for 45 min"
+/// call-target alert turns the home screen widget red even while the app is closed.
+class HmPushReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        try {
+            val extras = intent.extras ?: return
+            if (extras.getString("event_type") != "Call Target") return
+            val title = extras.getString("title") ?: return
+            if (!title.startsWith("No calls")) return
+            val alert = JSONObject()
+                .put("title", title)
+                .put("body", extras.getString("body") ?: "")
+                .put("at", System.currentTimeMillis())
+            context.getSharedPreferences("hm_widget", Context.MODE_PRIVATE).edit()
+                .putString("alert", alert.toString()).apply()
+            HipersignWidget.renderAll(context)
+        } catch (e: Exception) {
+        }
+    }
+}
+''';
 
 const _widgetBgAlert = '''<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
@@ -1613,7 +1656,7 @@ class HipersignWidget : AppWidgetProvider() {
                 alertBody = target.optString("line")
             }
             try {
-                val raw2 = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE).getString("hm_alert", null)
+                val raw2 = context.getSharedPreferences("hm_widget", Context.MODE_PRIVATE).getString("alert", null)
                 if (raw2 != null) {
                     val a = JSONObject(raw2)
                     val at = a.optLong("at")

@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:home_widget/home_widget.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:intl/intl.dart';
 
 import '../../shared/models/models.dart';
@@ -92,18 +90,3 @@ Future<bool> pinHomeWidget() async {
   }
 }
 
-/// A "No calls for 45 min" push: turn the home screen widget red, even while the app is closed
-/// (runs in the background message handler).
-Future<void> widgetAlertFromPush(Map<String, dynamic> data) async {
-  if (!Platform.isAndroid || data['event_type'] != 'Call Target') return;
-  final title = data['title']?.toString() ?? '';
-  if (!title.startsWith('No calls')) return;
-  try {
-    await HomeWidget.saveWidgetData<String>(
-      'hm_alert',
-      jsonEncode({'title': title, 'body': data['body']?.toString() ?? '', 'at': DateTime.now().millisecondsSinceEpoch}),
-    );
-    final pkg = (await PackageInfo.fromPlatform()).packageName;
-    await HomeWidget.updateWidget(qualifiedAndroidName: '$pkg.HipersignWidget');
-  } catch (_) {}
-}

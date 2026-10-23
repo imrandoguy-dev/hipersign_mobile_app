@@ -22,7 +22,6 @@ dependencies:
   firebase_messaging: ^16.7.0
   open_filex: ^4.7.0
   package_info_plus: ^10.2.2
-  home_widget: ^0.8.1 # lets a call-target alert redraw the widget while the app is closed
   just_audio: '>=0.9.40 <0.11.0' # plays call recordings and WhatsApp voice messages
   record: '>=5.2.0 <8.0.0' # records WhatsApp voice messages
   image_picker: ^1.1.2 # photos for WhatsApp
