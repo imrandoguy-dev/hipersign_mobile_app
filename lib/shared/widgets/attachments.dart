@@ -223,9 +223,8 @@ class PendingAttachments extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Row(children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        const Spacer(),
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      Wrap(spacing: 8, children: [
         TextButton.icon(
           onPressed: () async {
             final f = await recordVoiceNote(context);
@@ -240,7 +239,7 @@ class PendingAttachments extends StatelessWidget {
             if (f != null) onChanged([...files, f]);
           },
           icon: const Icon(Icons.attach_file),
-          label: const Text('File'),
+          label: const Text('Photo / file'),
         ),
       ]),
       if (files.isEmpty)
@@ -376,12 +375,11 @@ class _AttachmentsSectionState extends State<AttachmentsSection> {
     final items = _items;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        Expanded(child: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w700))),
         if (_uploading > 0) ...[
           const SizedBox(width: 8),
           const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
         ],
-        const Spacer(),
         if (widget.canAdd) ...[
           IconButton(
             tooltip: 'Record a voice note',

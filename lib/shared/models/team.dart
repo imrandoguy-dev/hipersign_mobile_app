@@ -138,6 +138,12 @@ class TargetProgress {
     required this.remaining,
     required this.reached,
     this.connectedOnly = false,
+    this.newOnly = false,
+    this.unit = 'calls',
+    this.newConnected = 0,
+    this.meetingTarget = 0,
+    this.meetings = 0,
+    this.meetingsRemaining = 0,
     this.lastCall,
     this.checkTimes = const [],
     this.idleMinutes = 0,
@@ -151,6 +157,12 @@ class TargetProgress {
   final int remaining;
   final bool reached;
   final bool connectedOnly;
+  final bool newOnly;
+  final String unit; // "new connected calls", "calls"...
+  final int newConnected;
+  final int meetingTarget;
+  final int meetings;
+  final int meetingsRemaining;
   final DateTime? lastCall;
   final List<String> checkTimes;
   final int idleMinutes;
@@ -167,6 +179,12 @@ class TargetProgress {
       remaining: _int(j['remaining']),
       reached: j['reached'] == true,
       connectedOnly: j['connected_only'] == true,
+      newOnly: j['new_only'] == true,
+      unit: j['unit']?.toString() ?? (j['connected_only'] == true ? 'connected calls' : 'calls'),
+      newConnected: _int(j['new_connected']),
+      meetingTarget: _int(j['meeting_target']),
+      meetings: _int(j['meetings']),
+      meetingsRemaining: _int(j['meetings_remaining']),
       lastCall: parseDate(j['last_call']),
       checkTimes: ((j['check_times'] as List?) ?? const []).map((e) => e.toString()).toList(),
       idleMinutes: _int(j['idle_minutes']),
@@ -187,6 +205,8 @@ class CallerTarget {
     required this.workStart,
     required this.workEnd,
     required this.connectedOnly,
+    this.newOnly = false,
+    this.meetingTarget = 0,
     this.progress,
   });
 
@@ -199,6 +219,8 @@ class CallerTarget {
   final String workStart;
   final String workEnd;
   final bool connectedOnly;
+  final bool newOnly;
+  final int meetingTarget;
   final TargetProgress? progress;
 
   factory CallerTarget.fromJson(Map<String, dynamic> j) => CallerTarget(
@@ -211,6 +233,8 @@ class CallerTarget {
         workStart: j['work_start']?.toString() ?? '09:30',
         workEnd: j['work_end']?.toString() ?? '18:00',
         connectedOnly: j['count_connected_only'] == true,
+        newOnly: j['count_new_only'] == true,
+        meetingTarget: _int(j['meeting_target']),
         progress: TargetProgress.fromJson(j['progress']),
       );
 }
@@ -253,6 +277,9 @@ class DailyReport {
     required this.callsMade,
     required this.callsConnected,
     this.callTarget,
+    this.newConnected = 0,
+    this.meetingsAssigned = 0,
+    this.meetingTarget,
   });
 
   final String user;
@@ -264,6 +291,9 @@ class DailyReport {
   final int callsMade;
   final int callsConnected;
   final int? callTarget;
+  final int newConnected;
+  final int meetingsAssigned;
+  final int? meetingTarget;
 
   factory DailyReport.fromJson(Map<String, dynamic> j) => DailyReport(
         user: j['user']?.toString() ?? '',
@@ -275,5 +305,8 @@ class DailyReport {
         callsMade: _int(j['calls_made']),
         callsConnected: _int(j['calls_connected']),
         callTarget: (j['call_target'] as num?)?.toInt(),
+        newConnected: _int(j['new_connected']),
+        meetingsAssigned: _int(j['meetings_assigned']),
+        meetingTarget: (j['meeting_target'] as num?)?.toInt(),
       );
 }

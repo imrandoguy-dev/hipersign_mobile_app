@@ -121,10 +121,17 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                 color: HsColors.active,
               ),
             ]),
-            if (r.callsMade > 0)
+            if (r.callsMade > 0 || r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text('${r.callsConnected} of ${r.callsMade} calls connected', style: const TextStyle(color: HsColors.textSecondary)),
+                child: Text(
+                  [
+                    if (r.callsMade > 0) '${r.callsConnected} of ${r.callsMade} calls connected · ${r.newConnected} new connected',
+                    if (r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0)
+                      'Meetings assigned: ${r.meetingsAssigned}${(r.meetingTarget ?? 0) > 0 ? ' of ${r.meetingTarget}' : ''}',
+                  ].join('\n'),
+                  style: const TextStyle(color: HsColors.textSecondary),
+                ),
               ),
             if (r.items.isEmpty)
               const EmptyState(icon: Icons.event_available, title: 'Nothing was due', message: 'No follow-ups, meetings, trainings or tasks for this day.'),
@@ -259,7 +266,8 @@ class _TeamReportScreenState extends State<TeamReportScreen> {
                 subtitle: Text([
                   '${r.done} done',
                   '${r.notDone} not done',
-                  if (r.callsMade > 0 || r.callTarget != null) '${r.callsMade}${r.callTarget != null ? '/${r.callTarget}' : ''} calls',
+                  if (r.callsMade > 0 || r.callTarget != null) '${r.callsMade}${r.callTarget != null ? '/${r.callTarget}' : ''} calls (${r.newConnected} new connected)',
+                  if (r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0) '${r.meetingsAssigned}${(r.meetingTarget ?? 0) > 0 ? '/${r.meetingTarget}' : ''} meetings',
                 ].join(' · ')),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DailyReportScreen(user: r.user, name: r.name, day: _day))),

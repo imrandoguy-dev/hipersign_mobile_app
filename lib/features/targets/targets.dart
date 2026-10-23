@@ -44,9 +44,9 @@ class _TargetBannerState extends State<TargetBanner> {
   @override
   Widget build(BuildContext context) {
     final p = _p;
-    if (p == null || p.target <= 0 || !p.workingDay) return const SizedBox.shrink();
-    final frac = (p.counted / p.target).clamp(0.0, 1.0);
-    final unit = p.connectedOnly ? 'connected calls' : 'calls';
+    if (p == null || (p.target <= 0 && p.meetingTarget <= 0) || !p.workingDay) return const SizedBox.shrink();
+    final frac = p.target <= 0 ? 1.0 : (p.counted / p.target).clamp(0.0, 1.0);
+    final unit = p.unit;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
       child: Material(
@@ -63,11 +63,13 @@ class _TargetBannerState extends State<TargetBanner> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    p.reached ? 'Target reached - ${p.counted} $unit today' : '${p.remaining} more $unit needed today',
+                    p.target <= 0
+                        ? 'Meetings assigned today'
+                        : (p.reached ? 'Target reached - ${p.counted} $unit today' : '${p.remaining} more $unit needed today'),
                     style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: HsColors.onPastel),
                   ),
                 ),
-                Text('${p.counted}/${p.target}', style: const TextStyle(fontWeight: FontWeight.w700, color: HsColors.onPastel)),
+                if (p.target > 0) Text('${p.counted}/${p.target}', style: const TextStyle(fontWeight: FontWeight.w700, color: HsColors.onPastel)),
               ]),
               const SizedBox(height: 8),
               ClipRRect(
@@ -77,7 +79,8 @@ class _TargetBannerState extends State<TargetBanner> {
               const SizedBox(height: 4),
               Text(
                 [
-                  '${p.made} made · ${p.connected} connected',
+                  '${p.made} made · ${p.connected} connected · ${p.newConnected} new connected',
+                  if (p.meetingTarget > 0) 'meetings ${p.meetings}/${p.meetingTarget}${p.meetingsRemaining > 0 ? ' (${p.meetingsRemaining} more)' : ' ✓'}',
                   if (p.lastCall != null) 'last call ${fmtTime(p.lastCall)}',
                 ].join(' · '),
                 style: const TextStyle(fontSize: 12, color: HsColors.onPastel),
@@ -147,7 +150,9 @@ class _TargetsScreenState extends State<TargetsScreen> {
                 subtitle: Text(!t.enabled
                     ? 'No target set'
                     : [
-                        '${t.dailyTarget} calls/day',
+                        '${t.dailyTarget} ${t.connectedOnly && t.newOnly ? 'new connected calls' : 'calls'}/day',
+                        if (t.meetingTarget > 0) '${t.meetingTarget} meetings/day',
+                        if (t.progress != null && t.meetingTarget > 0) 'meetings today ${t.progress!.meetings}/${t.meetingTarget}',
                         if (t.progress != null) 'today ${t.progress!.counted}/${t.progress!.target}',
                         if (t.checkTimes.isNotEmpty) 'alerts ${t.checkTimes}',
                         if (t.idleMinutes > 0) 'idle ${t.idleMinutes} min',
@@ -185,7 +190,11 @@ class _TargetSheetState extends State<_TargetSheet> {
   late int _idle = widget.t.idleMinutes;
   late TimeOfDay _start = _parse(widget.t.workStart, const TimeOfDay(hour: 9, minute: 30));
   late TimeOfDay _end = _parse(widget.t.workEnd, const TimeOfDay(hour: 18, minute: 0));
-  late bool _connectedOnly = widget.t.connectedOnly;
+  // What counts towards the target: all / connected / new connected calls.
+  late String _count = widget.t.connectedOnly && widget.t.newOnly
+      ? 'new_connected'
+      : (widget.t.connectedOnly ? 'connected' : (widget.t.newOnly ? 'new' : 'all'));
+  late final _meetings = TextEditingController(text: widget.t.meetingTarget > 0 ? '${widget.t.meetingTarget}' : '');
 
   static TimeOfDay _parse(String v, TimeOfDay d) {
     final p = v.split(':');
@@ -204,6 +213,7 @@ class _TargetSheetState extends State<_TargetSheet> {
   @override
   void dispose() {
     _target.dispose();
+    _meetings.dispose();
     super.dispose();
   }
 
@@ -222,7 +232,9 @@ class _TargetSheetState extends State<_TargetSheet> {
         'idle_minutes': _idle,
         'work_start': _hm(_start),
         'work_end': _hm(_end),
-        'count_connected_only': _connectedOnly ? 1 : 0,
+        'count_connected_only': (_count == 'connected' || _count == 'new_connected') ? 1 : 0,
+        'count_new_only': (_count == 'new' || _count == 'new_connected') ? 1 : 0,
+        'meeting_target': int.tryParse(_meetings.text.trim()) ?? 0,
       }).then((_) => true),
       success: 'Target saved',
     );
@@ -245,12 +257,26 @@ class _TargetSheetState extends State<_TargetSheet> {
           ),
           if (_enabled) ...[
             TextField(controller: _target, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Calls per day')),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Count only connected calls'),
-              value: _connectedOnly,
-              onChanged: (v) => setState(() => _connectedOnly = v),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _count,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Count towards the target'),
+              items: const [
+                DropdownMenuItem(value: 'new_connected', child: Text('Only new connected calls')),
+                DropdownMenuItem(value: 'connected', child: Text('Connected calls (new + follow-up)')),
+                DropdownMenuItem(value: 'new', child: Text('New calls (connected or not)')),
+                DropdownMenuItem(value: 'all', child: Text('All calls made')),
+              ],
+              onChanged: (v) => setState(() => _count = v ?? 'new_connected'),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _meetings,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Meetings to assign per day (optional)', hintText: 'e.g. 3'),
+            ),
+            const SizedBox(height: 12),
             Row(children: [
               Expanded(
                 child: OutlinedButton(
