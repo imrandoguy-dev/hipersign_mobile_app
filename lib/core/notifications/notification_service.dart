@@ -12,6 +12,7 @@ import '../../app/nav.dart';
 import '../../shared/models/models.dart';
 import '../api/api_client.dart';
 import '../cache/cache_store.dart';
+import '../widget/home_widget.dart';
 import 'alarm.dart';
 import 'firebase_options.dart';
 
@@ -170,6 +171,7 @@ class NotificationService {
     if (!Platform.isAndroid) return;
     if (m.data['alarm'] == '1') {
       showAlarmFromData(_local, Map<String, dynamic>.from(m.data));
+      widgetAlertFromPush(Map<String, dynamic>.from(m.data));
       return;
     }
     final n = m.notification;

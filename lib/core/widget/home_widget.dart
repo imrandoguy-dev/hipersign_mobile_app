@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:home_widget/home_widget.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:intl/intl.dart';
 
 import '../../shared/models/models.dart';
@@ -40,6 +42,18 @@ Future<void> updateHomeWidget(Repository repo) async {
       });
     }
     // Open work from earlier days stays on the widget (newest first) until it is done.
+    Map<String, dynamic>? target;
+    try {
+      final t = await repo.myTarget();
+      if (t != null && t.workingDay && (t.target > 0 || t.meetingTarget > 0)) {
+        target = {
+          'idle': t.idle,
+          'idle_title': 'No calls for ${t.idleFor ?? 'a while'}',
+          'line': '${t.remaining} more ${t.unit} needed (${t.counted} of ${t.target})',
+          'short': t.target > 0 ? '${t.counted}/${t.target} calls' : '${t.meetings}/${t.meetingTarget} meetings',
+        };
+      }
+    } catch (_) {}
     final earlier = d.overdue.where((a) => a.isOpen && a.start != null && a.start!.isBefore(day)).toList()
       ..sort((a, b) => b.start!.compareTo(a.start!));
     await _channel.invokeMethod('updateWidget', {
@@ -56,6 +70,8 @@ Future<void> updateHomeWidget(Repository repo) async {
             },
         ],
         'updated': DateFormat.jm().format(now),
+        'updated_ms': now.millisecondsSinceEpoch,
+        if (target != null) 'target': target,
       }),
     });
   } catch (_) {
@@ -74,4 +90,20 @@ Future<bool> pinHomeWidget() async {
   } catch (_) {
     return false;
   }
+}
+
+/// A "No calls for 45 min" push: turn the home screen widget red, even while the app is closed
+/// (runs in the background message handler).
+Future<void> widgetAlertFromPush(Map<String, dynamic> data) async {
+  if (!Platform.isAndroid || data['event_type'] != 'Call Target') return;
+  final title = data['title']?.toString() ?? '';
+  if (!title.startsWith('No calls')) return;
+  try {
+    await HomeWidget.saveWidgetData<String>(
+      'hm_alert',
+      jsonEncode({'title': title, 'body': data['body']?.toString() ?? '', 'at': DateTime.now().millisecondsSinceEpoch}),
+    );
+    final pkg = (await PackageInfo.fromPlatform()).packageName;
+    await HomeWidget.updateWidget(qualifiedAndroidName: '$pkg.HipersignWidget');
+  } catch (_) {}
 }

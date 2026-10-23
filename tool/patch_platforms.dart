@@ -1401,6 +1401,7 @@ void _androidHomeWidget() {
     Directory('$res/$d').createSync(recursive: true);
   }
   _write('$res/drawable/hm_widget_bg.xml', _widgetBg, 'widget background');
+  _write('$res/drawable/hm_widget_bg_alert.xml', _widgetBgAlert, 'widget background (no calls alert)');
   _write('$res/layout/hm_widget.xml', _widgetLayout, 'widget layout');
   _write('$res/layout/hm_widget_row.xml', _widgetRow, 'widget row layout');
   _write('$res/layout/hm_widget_day.xml', _widgetDay, 'widget day header');
@@ -1408,6 +1409,14 @@ void _androidHomeWidget() {
   _write('$res/xml/hm_widget_info.xml', _widgetInfo, 'widget info');
   _write('${main.parent.path}/HipersignWidget.kt', _widgetKt.replaceFirst('__PACKAGE__', pkg), 'HipersignWidget.kt (home screen widget)');
 }
+
+const _widgetBgAlert = '''<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FFFDE2E2" />
+    <stroke android:width="3dp" android:color="#FFC62828" />
+    <corners android:radius="20dp" />
+</shape>
+''';
 
 const _widgetBg = '''<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
@@ -1593,6 +1602,38 @@ class HipersignWidget : AppWidgetProvider() {
 
             var rows = 0
             var hidden = 0
+
+            // Call target: "No calls for 45 min" turns the widget red. From the app's last sync,
+            // or from the alarm push (saved by the app in the background, newer than the sync).
+            val target = if (fresh) data.optJSONObject("target") else null
+            var alertTitle: String? = null
+            var alertBody = ""
+            if (target != null && target.optBoolean("idle")) {
+                alertTitle = target.optString("idle_title")
+                alertBody = target.optString("line")
+            }
+            try {
+                val raw2 = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE).getString("hm_alert", null)
+                if (raw2 != null) {
+                    val a = JSONObject(raw2)
+                    val at = a.optLong("at")
+                    if (now.time - at < 35L * 60 * 1000 && at > data.optLong("updated_ms", 0)) {
+                        alertTitle = a.optString("title")
+                        alertBody = a.optString("body")
+                    }
+                }
+            } catch (e: Exception) {}
+            if (alertTitle != null) {
+                views.setInt(R.id.hm_root, "setBackgroundResource", R.drawable.hm_widget_bg_alert)
+                views.addView(R.id.hm_rows, row(context, "", "\u26A0 " + alertTitle, false, true))
+                rows++
+                if (alertBody.isNotBlank()) {
+                    views.addView(R.id.hm_rows, row(context, "", alertBody, false, true))
+                    rows++
+                }
+            } else if (target != null && target.optString("short").isNotBlank()) {
+                views.setTextViewText(R.id.hm_count, target.optString("short"))
+            }
             val days = data.optJSONArray("days")
             var hasToday = false
             for (d in 0 until (days?.length() ?: 0)) if (days!!.getJSONObject(d).optString("date") == today) hasToday = true
