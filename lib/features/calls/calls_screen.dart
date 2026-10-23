@@ -17,7 +17,8 @@ import '../recordings/recording_widgets.dart';
 
 const _filters = {
   'all': 'All',
-  'not_reached': 'Not reached yet',
+  'new_not_reached': 'New leads not reached',
+  'not_reached': 'All not reached',
   'connected': 'Connected',
   'not_connected': 'Not answered',
   'incoming': 'Incoming',
@@ -34,7 +35,8 @@ String talkTime(int seconds) {
 
 /// Latest work calls with customers / leads / deals (like the phone's call log, work calls only).
 class CallsScreen extends StatefulWidget {
-  const CallsScreen({super.key});
+  const CallsScreen({super.key, this.initialFilter = 'all'});
+  final String initialFilter; // e.g. 'new_not_reached' from the target banner
 
   @override
   State<CallsScreen> createState() => _CallsScreenState();
@@ -45,7 +47,7 @@ class _CallsScreenState extends State<CallsScreen> {
   final _player = RecordingPlayer();
   Timer? _debounce;
   String _scope = 'mine';
-  String _filter = 'all';
+  late String _filter = widget.initialFilter;
   List<CallEntry> _items = [];
   Map<String, int>? _today;
   String? _next;
@@ -123,6 +125,12 @@ class _CallsScreenState extends State<CallsScreen> {
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
+  }
+
+  /// "New leads not reached (12)" - how many to call back.
+  String _chipLabel(String key, String label) {
+    final n = key == 'new_not_reached' ? _today?['new_not_reached'] : (key == 'not_reached' ? _today?['not_reached'] : null);
+    return n == null || n == 0 ? label : '$label ($n)';
   }
 
   void _set({String? scope, String? filter}) {
@@ -219,7 +227,7 @@ class _CallsScreenState extends State<CallsScreen> {
                     for (final f in _filters.entries)
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(label: Text(f.value), selected: _filter == f.key, onSelected: (_) => _set(filter: f.key)),
+                        child: ChoiceChip(label: Text(_chipLabel(f.key, f.value)), selected: _filter == f.key, onSelected: (_) => _set(filter: f.key)),
                       ),
                   ],
                 ),
@@ -228,9 +236,9 @@ class _CallsScreenState extends State<CallsScreen> {
               if (_loading && _items.isEmpty) const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
               if (!_loading && _items.isEmpty && _error == null)
                 EmptyState(
-                  icon: _filter == 'not_reached' ? Icons.check_circle_outline : Icons.call_outlined,
-                  title: _filter == 'not_reached' ? 'Everyone has been reached' : 'No calls here yet',
-                  message: _filter == 'not_reached'
+                  icon: _filter.endsWith('not_reached') ? Icons.check_circle_outline : Icons.call_outlined,
+                  title: _filter.endsWith('not_reached') ? 'Everyone has been reached' : 'No calls here yet',
+                  message: _filter.endsWith('not_reached')
                       ? 'Numbers you called that never picked up show here until a call connects.'
                       : 'Calls with customers, leads and deals appear here a moment after they end.',
                 ),

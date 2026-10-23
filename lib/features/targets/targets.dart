@@ -9,6 +9,7 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../shared/models/team.dart';
 import '../../shared/widgets/common.dart';
+import '../calls/calls_screen.dart';
 import '../customers/dialer_sheet.dart';
 import '../reports/daily_report_screen.dart';
 
@@ -86,6 +87,10 @@ class _TargetBannerState extends State<TargetBanner> {
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(value: frac, minHeight: 7, backgroundColor: Colors.white30, color: Colors.white),
           ),
+          if (p.newNotReached > 0) ...[
+            const SizedBox(height: 8),
+            _CallBackLink(count: p.newNotReached, light: true),
+          ],
           const SizedBox(height: 10),
           FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: HsColors.danger),
@@ -125,6 +130,10 @@ class _TargetBannerState extends State<TargetBanner> {
                 borderRadius: BorderRadius.circular(6),
                 child: LinearProgressIndicator(value: frac, minHeight: 7, backgroundColor: Colors.white54),
               ),
+              if (p.newNotReached > 0) ...[
+                const SizedBox(height: 6),
+                _CallBackLink(count: p.newNotReached, light: false),
+              ],
               const SizedBox(height: 4),
               Text(
                 [
@@ -381,6 +390,33 @@ class _TargetSheetState extends State<_TargetSheet> {
           ],
           const SizedBox(height: 16),
           FilledButton(onPressed: _save, child: const Text('Save')),
+        ]),
+      ),
+    );
+  }
+}
+
+/// "12 new leads not reached - call back" - opens that list in Calls.
+class _CallBackLink extends StatelessWidget {
+  const _CallBackLink({required this.count, required this.light});
+  final int count;
+  final bool light;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = light ? Colors.white : HsColors.danger;
+    return InkWell(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CallsScreen(initialFilter: 'new_not_reached'))),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(children: [
+          Icon(Icons.phone_missed, size: 18, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text('$count new lead${count == 1 ? '' : 's'} not reached - call back',
+                style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 14, decoration: TextDecoration.underline, decorationColor: color)),
+          ),
+          Icon(Icons.chevron_right, color: color),
         ]),
       ),
     );

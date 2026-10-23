@@ -150,6 +150,8 @@ class TargetProgress {
     this.workingDay = true,
     this.idle = false,
     this.idleFor,
+    this.newNotReached = 0,
+    this.newNotReachedToday = 0,
   });
 
   final int target;
@@ -171,6 +173,8 @@ class TargetProgress {
   final bool workingDay;
   final bool idle; // no calls for the set time right now
   final String? idleFor; // "45 min"
+  final int newNotReached; // new leads called that never connected (to call back)
+  final int newNotReachedToday;
 
   static TargetProgress? fromJson(dynamic raw) {
     if (raw is! Map) return null;
@@ -194,6 +198,8 @@ class TargetProgress {
       idleMinutes: _int(j['idle_minutes']),
       workingDay: j['working_day'] != false,
       idle: j['idle'] == true,
+      newNotReached: _int(j['new_not_reached']),
+      newNotReachedToday: _int(j['new_not_reached_today']),
       idleFor: str(j['idle_for']),
     );
   }
@@ -286,6 +292,7 @@ class DailyReport {
     this.newConnected = 0,
     this.meetingsAssigned = 0,
     this.meetingTarget,
+    this.newNotReached = 0,
   });
 
   final String user;
@@ -300,6 +307,7 @@ class DailyReport {
   final int newConnected;
   final int meetingsAssigned;
   final int? meetingTarget;
+  final int newNotReached; // new numbers called that day that never connected
 
   factory DailyReport.fromJson(Map<String, dynamic> j) => DailyReport(
         user: j['user']?.toString() ?? '',
@@ -313,6 +321,7 @@ class DailyReport {
         callTarget: (j['call_target'] as num?)?.toInt(),
         newConnected: _int(j['new_connected']),
         meetingsAssigned: _int(j['meetings_assigned']),
+        newNotReached: _int(j['new_not_reached']),
         meetingTarget: (j['meeting_target'] as num?)?.toInt(),
       );
 }

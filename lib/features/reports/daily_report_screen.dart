@@ -8,6 +8,7 @@ import '../../core/auth/session.dart';
 import '../../shared/models/team.dart';
 import '../../shared/widgets/common.dart';
 import '../activities/activity_detail_screen.dart';
+import '../calls/calls_screen.dart';
 import '../development/development_screen.dart';
 
 String _dayLabel(DateTime d) {
@@ -127,10 +128,21 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                 child: Text(
                   [
                     if (r.callsMade > 0) '${r.callsConnected} of ${r.callsMade} calls connected · ${r.newConnected} new connected',
+                    if (r.newNotReached > 0) 'New leads not reached: ${r.newNotReached}',
                     if (r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0)
                       'Meetings assigned: ${r.meetingsAssigned}${(r.meetingTarget ?? 0) > 0 ? ' of ${r.meetingTarget}' : ''}',
                   ].join('\n'),
                   style: const TextStyle(color: HsColors.textSecondary),
+                ),
+              ),
+            if (r.newNotReached > 0 && widget.user == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: FilledButton.tonalIcon(
+                  onPressed: () => Navigator.push(
+                      context, MaterialPageRoute(builder: (_) => const CallsScreen(initialFilter: 'new_not_reached'))),
+                  icon: const Icon(Icons.phone_missed),
+                  label: Text('Call back ${r.newNotReached} new lead${r.newNotReached == 1 ? '' : 's'} not reached'),
                 ),
               ),
             if (r.items.isEmpty)
@@ -267,6 +279,7 @@ class _TeamReportScreenState extends State<TeamReportScreen> {
                   '${r.done} done',
                   '${r.notDone} not done',
                   if (r.callsMade > 0 || r.callTarget != null) '${r.callsMade}${r.callTarget != null ? '/${r.callTarget}' : ''} calls (${r.newConnected} new connected)',
+                  if (r.newNotReached > 0) '${r.newNotReached} new not reached',
                   if (r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0) '${r.meetingsAssigned}${(r.meetingTarget ?? 0) > 0 ? '/${r.meetingTarget}' : ''} meetings',
                 ].join(' · ')),
                 trailing: const Icon(Icons.chevron_right),
