@@ -148,6 +148,8 @@ class TargetProgress {
     this.checkTimes = const [],
     this.idleMinutes = 0,
     this.workingDay = true,
+    this.idle = false,
+    this.idleFor,
   });
 
   final int target;
@@ -167,6 +169,8 @@ class TargetProgress {
   final List<String> checkTimes;
   final int idleMinutes;
   final bool workingDay;
+  final bool idle; // no calls for the set time right now
+  final String? idleFor; // "45 min"
 
   static TargetProgress? fromJson(dynamic raw) {
     if (raw is! Map) return null;
@@ -189,6 +193,8 @@ class TargetProgress {
       checkTimes: ((j['check_times'] as List?) ?? const []).map((e) => e.toString()).toList(),
       idleMinutes: _int(j['idle_minutes']),
       workingDay: j['working_day'] != false,
+      idle: j['idle'] == true,
+      idleFor: str(j['idle_for']),
     );
   }
 }

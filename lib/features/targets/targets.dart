@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,7 +9,11 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../shared/models/team.dart';
 import '../../shared/widgets/common.dart';
+import '../customers/dialer_sheet.dart';
 import '../reports/daily_report_screen.dart';
+
+/// The caller's target right now; the calendar turns red while [TargetProgress.idle].
+final targetNow = ValueNotifier<TargetProgress?>(null);
 
 /// Calendar banner for callers: today's calls against the target ("34 more calls needed").
 class TargetBanner extends StatefulWidget {
@@ -19,6 +25,7 @@ class TargetBanner extends StatefulWidget {
 
 class _TargetBannerState extends State<TargetBanner> {
   TargetProgress? _p;
+  Timer? _tick;
 
   @override
   void initState() {
@@ -26,10 +33,15 @@ class _TargetBannerState extends State<TargetBanner> {
     _p = context.read<SessionController>().repo.cachedTarget();
     refreshTick.addListener(_load);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // Re-checked every minute, so the calendar turns red as soon as the caller goes quiet.
+    _tick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) _load();
+    });
   }
 
   @override
   void dispose() {
+    _tick?.cancel();
     refreshTick.removeListener(_load);
     super.dispose();
   }
@@ -37,6 +49,7 @@ class _TargetBannerState extends State<TargetBanner> {
   Future<void> _load() async {
     try {
       final p = await context.read<SessionController>().repo.myTarget();
+      targetNow.value = p;
       if (mounted) setState(() => _p = p);
     } catch (_) {}
   }
@@ -47,6 +60,42 @@ class _TargetBannerState extends State<TargetBanner> {
     if (p == null || (p.target <= 0 && p.meetingTarget <= 0) || !p.workingDay) return const SizedBox.shrink();
     final frac = p.target <= 0 ? 1.0 : (p.counted / p.target).clamp(0.0, 1.0);
     final unit = p.unit;
+    if (p.idle) {
+      // Big red alert: no calls for a while and nothing on the calendar.
+      return Container(
+        margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(color: HsColors.danger, borderRadius: BorderRadius.circular(16)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.phone_disabled, color: Colors.white, size: 30),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('No calls for ${p.idleFor ?? 'a while'}',
+                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            '${p.remaining} more $unit needed today (${p.counted} of ${p.target}).'
+            '${p.meetingTarget > 0 && p.meetingsRemaining > 0 ? ' ${p.meetingsRemaining} more meetings to assign.' : ''}',
+            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(value: frac, minHeight: 7, backgroundColor: Colors.white30, color: Colors.white),
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: HsColors.danger),
+            onPressed: () => openDialer(context),
+            icon: const Icon(Icons.call),
+            label: const Text('Call now', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ]),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
       child: Material(

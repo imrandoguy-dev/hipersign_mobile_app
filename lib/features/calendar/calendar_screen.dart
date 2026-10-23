@@ -9,6 +9,7 @@ import '../../core/auth/session.dart';
 import '../../core/notifications/reminder_planner.dart';
 import '../../core/repository.dart';
 import '../../shared/models/models.dart';
+import '../../shared/models/team.dart';
 import '../../shared/widgets/activity_card.dart';
 import '../../shared/widgets/common.dart';
 import '../activities/activity_detail_screen.dart';
@@ -145,8 +146,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
       CalView.month => DateFormat('MMMM yyyy').format(_selected),
     };
     final isToday = _selected == dateOnly(DateTime.now());
+    // Callers: the whole calendar turns red while they have made no calls for a while.
+    return ValueListenableBuilder<TargetProgress?>(
+      valueListenable: targetNow,
+      builder: (context, target, _) => _scaffold(context, title, isToday, target?.idle == true),
+    );
+  }
+
+  Widget _scaffold(BuildContext context, String title, bool isToday, bool idle) {
     return Scaffold(
+      backgroundColor: idle ? HsColors.dangerBg : null,
       appBar: AppBar(
+        backgroundColor: idle ? HsColors.danger : null,
+        foregroundColor: idle ? Colors.white : null,
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
         actions: [
           if (!isToday)
