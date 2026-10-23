@@ -61,7 +61,13 @@ jobs:
           # Every build gets a higher number, so phones know an update is newer.
           BUILD=$((GITHUB_RUN_NUMBER + 100))
           echo "BUILD=$BUILD" >> "$GITHUB_ENV"
-          flutter build apk --release --build-number "$BUILD" --build-name "0.1.$BUILD"
+          set -o pipefail
+          if ! flutter build apk --release --build-number "$BUILD" --build-name "0.1.$BUILD" 2>&1 | tee build.txt; then
+            # Show why in the run's annotations (logs are not always reachable).
+            grep -E "^e: |error:|Error:|What went wrong|> .*failed|Could not|Unresolved|FAILURE" build.txt | head -10 | while IFS= read -r line; do echo "::error::$line"; done
+            grep -A6 "What went wrong" build.txt | head -14 | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: hipersign-android-apk
