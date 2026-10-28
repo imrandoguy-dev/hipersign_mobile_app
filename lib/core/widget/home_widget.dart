@@ -24,7 +24,9 @@ Future<void> updateHomeWidget(Repository repo) async {
       final date = day.add(Duration(days: i));
       final work = openFirst(d.items.where((a) =>
           a.start != null && a.start!.year == date.year && a.start!.month == date.month && a.start!.day == date.day));
-      if (work.isEmpty && i > 0) continue; // only today is listed when empty
+      final dayTasks = d.tasks.where((t) =>
+          t.deadline != null && t.deadline!.year == date.year && t.deadline!.month == date.month && t.deadline!.day == date.day).toList();
+      if (work.isEmpty && dayTasks.isEmpty && i > 0) continue; // only today is listed when empty
       days.add({
         'date': DateFormat('yyyy-MM-dd').format(date),
         'label': DateFormat('EEE, d MMM').format(date),
@@ -35,6 +37,13 @@ Future<void> updateHomeWidget(Repository repo) async {
               'text': a.party != null && a.party!.name.isNotEmpty ? '${a.title} · ${a.party!.name}' : a.title,
               'done': !a.isOpen,
               'overdue': a.isOpen && a.start!.isBefore(now),
+            },
+          for (final t in dayTasks)
+            {
+              'time': DateFormat.jm().format(t.deadline!),
+              'text': 'Task: ${t.title}',
+              'done': !t.isOpen,
+              'overdue': t.isOpen && t.deadline!.isBefore(now),
             },
         ],
       });
@@ -66,6 +75,8 @@ Future<void> updateHomeWidget(Repository repo) async {
               'time': DateFormat('d MMM').format(a.start!),
               'text': a.party != null && a.party!.name.isNotEmpty ? '${a.title} · ${a.party!.name}' : a.title,
             },
+          for (final t in d.tasksOverdue.where((t) => t.deadline != null && t.deadline!.isBefore(day)))
+            {'time': DateFormat('d MMM').format(t.deadline!), 'text': 'Task: ${t.title}'},
         ],
         'updated': DateFormat.jm().format(now),
         'updated_ms': now.millisecondsSinceEpoch,

@@ -220,7 +220,7 @@ class _DevelopmentScreenState extends State<DevelopmentScreen> {
                           : 'Use "Assign work" to give a task to a developer with a deadline.')
                       : null,
                 ),
-              for (final t in _items) _DevCard(task: t, showDeveloper: _scope != 'mine', onTap: () => _open(t)),
+              for (final t in _items) DevTaskCard(task: t, showDeveloper: _scope != 'mine', onTap: () => _open(t)),
             ],
           ),
         ),
@@ -229,8 +229,8 @@ class _DevelopmentScreenState extends State<DevelopmentScreen> {
   }
 }
 
-class _DevCard extends StatelessWidget {
-  const _DevCard({required this.task, required this.showDeveloper, required this.onTap});
+class DevTaskCard extends StatelessWidget {
+  const DevTaskCard({super.key, required this.task, required this.showDeveloper, required this.onTap});
   final DevTask task;
   final bool showDeveloper;
   final VoidCallback onTap;

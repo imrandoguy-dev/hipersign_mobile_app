@@ -13,7 +13,9 @@ import '../../shared/models/team.dart';
 import '../../shared/widgets/activity_card.dart';
 import '../../shared/widgets/common.dart';
 import '../activities/activity_detail_screen.dart';
+import '../development/development_screen.dart';
 import '../targets/targets.dart';
+import '../../shared/models/development.dart';
 
 enum CalView { day, week, month }
 
@@ -278,6 +280,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ))
       .toList();
 
+  List<Widget> _taskCards(List<DevTask> list) => [
+        for (final t in list)
+          DevTaskCard(
+            task: t,
+            showDeveloper: false,
+            onTap: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => DevTaskScreen(taskId: t.id, kind: t.kind)));
+              _load();
+            },
+          ),
+      ];
+
   List<Widget> _body() {
     if (_view == CalView.month) return [SliverToBoxAdapter(child: _monthGrid())];
     final d = _data;
@@ -289,12 +303,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
       for (var i = 0; i < 7; i++) {
         final day = start.add(Duration(days: i));
         final items = openFirst(d.items.where((a) => a.start != null && dateOnly(a.start!) == day));
+        final dayTasks = d.tasks.where((t) => t.deadline != null && dateOnly(t.deadline!) == day).toList();
         widgets.add(SliverToBoxAdapter(
           child: InkWell(
             onTap: () => _select(day, view: CalView.day),
-            child: SectionHeader(DateFormat('EEEE d MMM').format(day), count: items.length),
+            child: SectionHeader(DateFormat('EEEE d MMM').format(day), count: items.length + dayTasks.length),
           ),
         ));
+        if (dayTasks.isNotEmpty) widgets.add(SliverList(delegate: SliverChildListDelegate(_taskCards(dayTasks))));
+        if (items.isEmpty && dayTasks.isNotEmpty) continue;
         if (items.isEmpty) {
           widgets.add(const SliverToBoxAdapter(
             child: Padding(
@@ -315,7 +332,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final shown = scheduled.map((a) => a.id).toSet();
     final overdue = d.overdue.where((a) => !shown.contains(a.id)).toList();
     final undated = d.unscheduled.where((a) => !shown.contains(a.id)).toList();
-    if (scheduled.isEmpty && overdue.isEmpty && undated.isEmpty) {
+    final dueTasks = d.tasks;
+    final dueIds = dueTasks.map((t) => t.id).toSet();
+    final lateTasks = d.tasksOverdue.where((t) => !dueIds.contains(t.id)).toList();
+    if (scheduled.isEmpty && overdue.isEmpty && undated.isEmpty && dueTasks.isEmpty && lateTasks.isEmpty) {
       return const [
         SliverToBoxAdapter(
           child: EmptyState(
@@ -337,9 +357,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
         )
       else
         SliverList(delegate: SliverChildListDelegate(_cards(scheduled))),
-      if (overdue.isNotEmpty) ...[
-        SliverToBoxAdapter(child: SectionHeader('Overdue - still open', count: overdue.length, color: HsColors.overdue)),
-        SliverList(delegate: SliverChildListDelegate(_cards(overdue))),
+      if (dueTasks.isNotEmpty) ...[
+        SliverToBoxAdapter(child: SectionHeader('Tasks due', count: dueTasks.length, color: HsColors.pending)),
+        SliverList(delegate: SliverChildListDelegate(_taskCards(dueTasks))),
+      ],
+      if (overdue.isNotEmpty || lateTasks.isNotEmpty) ...[
+        SliverToBoxAdapter(
+            child: SectionHeader('Overdue - still open', count: overdue.length + lateTasks.length, color: HsColors.overdue)),
+        SliverList(delegate: SliverChildListDelegate([..._cards(overdue), ..._taskCards(lateTasks)])),
       ],
       if (undated.isNotEmpty) ...[
         SliverToBoxAdapter(child: SectionHeader('No date yet', count: undated.length, color: HsColors.pending)),

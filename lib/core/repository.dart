@@ -25,15 +25,25 @@ class Loaded<T> {
 }
 
 class CalendarData {
-  CalendarData({required this.items, required this.overdue, required this.unscheduled});
+  CalendarData({required this.items, required this.overdue, required this.unscheduled, this.tasks = const [], this.tasksOverdue = const []});
   final List<Activity> items;
   final List<Activity> overdue;
   final List<Activity> unscheduled;
+  final List<DevTask> tasks; // team tasks / development work due in the range (by deadline)
+  final List<DevTask> tasksOverdue; // still open, deadline passed
 
   factory CalendarData.fromJson(Map<String, dynamic> j) {
     List<Activity> list(String k) =>
         ((j[k] as List?) ?? const []).map((e) => Activity.fromJson(Map<String, dynamic>.from(e as Map))).toList();
-    return CalendarData(items: list('items'), overdue: list('overdue'), unscheduled: list('unscheduled'));
+    List<DevTask> tasks(String k) =>
+        ((j[k] as List?) ?? const []).map((e) => DevTask.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    return CalendarData(
+      items: list('items'),
+      overdue: list('overdue'),
+      unscheduled: list('unscheduled'),
+      tasks: tasks('tasks'),
+      tasksOverdue: tasks('tasks_overdue'),
+    );
   }
 }
 
