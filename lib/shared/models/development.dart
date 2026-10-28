@@ -14,6 +14,7 @@ class DevTask {
     this.kind = 'dev',
     this.team,
     this.attachments = 0,
+    this.created,
     required this.title,
     required this.status,
     required this.priority,
@@ -39,6 +40,7 @@ class DevTask {
   final String kind; // dev | team
   final String? team; // Accounts, Marketing... (team tasks)
   final int attachments;
+  final DateTime? created;
   final String title;
   final String status; // Open | In Progress | In Review | Done | Cancelled
   final String priority;
@@ -66,6 +68,7 @@ class DevTask {
         kind: j['kind']?.toString() ?? 'dev',
         team: str(j['team']),
         attachments: (j['attachments'] as num?)?.toInt() ?? 0,
+        created: parseDate(j['created']),
         title: j['title']?.toString() ?? '',
         status: j['status']?.toString() ?? 'Open',
         priority: j['priority']?.toString() ?? 'Medium',
@@ -98,4 +101,16 @@ class DevPage {
   final int open;
   final int late;
   final List<String> teams;
+}
+
+/// Is [t] on the calendar on [day]? Open work: every day from when it was given until its
+/// deadline. Finished work: its deadline day.
+bool taskOnDay(DevTask t, DateTime day) {
+  final d = t.deadline;
+  if (d == null) return false;
+  DateTime only(DateTime x) => DateTime(x.year, x.month, x.day);
+  final dl = only(d), x = only(day);
+  if (!t.isOpen) return x == dl;
+  final from = t.created != null ? only(t.created!) : dl;
+  return !x.isBefore(from) && !x.isAfter(dl);
 }

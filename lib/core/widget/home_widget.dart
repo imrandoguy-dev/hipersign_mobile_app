@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import '../../shared/models/development.dart';
 import '../../shared/models/models.dart';
 import '../repository.dart';
 
@@ -24,8 +25,13 @@ Future<void> updateHomeWidget(Repository repo) async {
       final date = day.add(Duration(days: i));
       final work = openFirst(d.items.where((a) =>
           a.start != null && a.start!.year == date.year && a.start!.month == date.month && a.start!.day == date.day));
-      final dayTasks = d.tasks.where((t) =>
-          t.deadline != null && t.deadline!.year == date.year && t.deadline!.month == date.month && t.deadline!.day == date.day).toList();
+      // Open tasks: today (until done) and on their deadline day; not repeated on every day.
+      final dayTasks = d.tasks.where((t) {
+        final dl = t.deadline;
+        if (dl == null) return false;
+        final onDeadline = dl.year == date.year && dl.month == date.month && dl.day == date.day;
+        return onDeadline || (i == 0 && t.isOpen && taskOnDay(t, date));
+      }).toList();
       if (work.isEmpty && dayTasks.isEmpty && i > 0) continue; // only today is listed when empty
       days.add({
         'date': DateFormat('yyyy-MM-dd').format(date),

@@ -303,7 +303,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       for (var i = 0; i < 7; i++) {
         final day = start.add(Duration(days: i));
         final items = openFirst(d.items.where((a) => a.start != null && dateOnly(a.start!) == day));
-        final dayTasks = d.tasks.where((t) => t.deadline != null && dateOnly(t.deadline!) == day).toList();
+        final dayTasks = d.tasks.where((t) => taskOnDay(t, day)).toList();
         widgets.add(SliverToBoxAdapter(
           child: InkWell(
             onTap: () => _select(day, view: CalView.day),
@@ -358,7 +358,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       else
         SliverList(delegate: SliverChildListDelegate(_cards(scheduled))),
       if (dueTasks.isNotEmpty) ...[
-        SliverToBoxAdapter(child: SectionHeader('Tasks due', count: dueTasks.length, color: HsColors.pending)),
+        SliverToBoxAdapter(child: SectionHeader('Tasks', count: dueTasks.length, color: HsColors.pending)),
         SliverList(delegate: SliverChildListDelegate(_taskCards(dueTasks))),
       ],
       if (overdue.isNotEmpty || lateTasks.isNotEmpty) ...[
