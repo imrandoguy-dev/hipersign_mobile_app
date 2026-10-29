@@ -167,7 +167,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         'reference_doctype': _party!.doctype,
         'reference_name': _party!.id,
       },
-      if (_type == 'Meeting' && !_samePeople(a.people)) 'people': jsonEncode(_people.map((p) => p.id).toList()),
+      if (_type != 'Trial' && !_samePeople(a.people)) 'people': jsonEncode(_people.map((p) => p.id).toList()),
       if (a.start == null || _start != a.start || (a.end != null && a.end!.difference(a.start!).inMinutes != minutes)) ...{
         'start': Repository.iso(_start),
         'end': Repository.iso(_start.add(Duration(minutes: minutes))),
@@ -183,7 +183,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       bumpRefresh();
       if (!mounted) return;
       if (saved == null) {
-        showSnack('You are no longer in this meeting');
+        showSnack('Removed you from this ${_type.toLowerCase()}');
         Navigator.of(context)
           ..pop(true)
           ..maybePop();
@@ -217,7 +217,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         'location': _location.text.trim().isEmpty ? null : _location.text.trim(),
         'idempotency_key': _idempotencyKey,
         if (_reminders != null) 'reminder_offsets': _reminders!.join(','),
-        if (_type == 'Meeting' && _people.isNotEmpty) 'people': jsonEncode(_people.map((p) => p.id).toList()),
+        if (_type != 'Trial' && _people.isNotEmpty) 'people': jsonEncode(_people.map((p) => p.id).toList()),
       });
       bumpRefresh();
       if (!mounted) return;
@@ -249,7 +249,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => _PeopleSheet(all: all, selected: _people.map((p) => p.id).toSet()),
+      builder: (_) => _PeopleSheet(title: 'People in this ${_type.toLowerCase()}', all: all, selected: _people.map((p) => p.id).toSet()),
     );
     if (picked != null && picked.isNotEmpty) setState(() => _people = picked);
   }
@@ -365,9 +365,11 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
           ),
         const SizedBox(height: 12),
         _remindersTile(),
-        if (_type == 'Meeting') ...[
+        if (_type != 'Trial') ...[
           const SizedBox(height: 12),
           _peopleTile(),
+        ],
+        if (_type == 'Meeting') ...[
           const SizedBox(height: 12),
           TextField(controller: _location, decoration: const InputDecoration(labelText: 'Location (optional)')),
         ],
@@ -381,8 +383,9 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
 /// Choose several people from the team, with search.
 class _PeopleSheet extends StatefulWidget {
-  const _PeopleSheet({required this.all, required this.selected});
+  const _PeopleSheet({required this.title, required this.all, required this.selected});
 
+  final String title;
   final List<MeetingPerson> all;
   final Set<String> selected;
 
@@ -406,7 +409,7 @@ class _PeopleSheetState extends State<_PeopleSheet> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
             child: Row(children: [
-              Expanded(child: Text('People in this meeting', style: Theme.of(context).textTheme.titleMedium)),
+              Expanded(child: Text(widget.title, style: Theme.of(context).textTheme.titleMedium)),
               FilledButton(
                 onPressed: _sel.isEmpty
                     ? null
