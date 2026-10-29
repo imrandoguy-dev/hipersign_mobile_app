@@ -504,6 +504,7 @@ class _DevTaskFormState extends State<DevTaskForm> {
   late String? _team = widget.task?.team ?? widget.team;
   List<String> _teams = [];
   List<PendingFile> _files = [];
+  bool _saving = false; // one tap = one task (no duplicates while saving / uploading)
   late String? _customer = widget.task?.customer;
   late String? _customerName = widget.task?.customerName ?? widget.task?.customer;
   bool get _isTeam => widget.kind == 'team';
@@ -572,6 +573,8 @@ class _DevTaskFormState extends State<DevTaskForm> {
       'priority': _priority,
       'reminders': _reminders.where((m) => m > 0).join(','),
     };
+    if (_saving) return;
+    setState(() => _saving = true);
     final repo = context.read<SessionController>().repo;
     final task = widget.task;
     final saved = await runWrite(
@@ -584,8 +587,10 @@ class _DevTaskFormState extends State<DevTaskForm> {
     }
     if (saved != null && mounted) {
       bumpRefresh();
-      Navigator.pop(context, saved);
+      Navigator.pop(context, saved); // back to the list
+      return;
     }
+    if (mounted) setState(() => _saving = false);
   }
 
   @override
@@ -697,7 +702,12 @@ class _DevTaskFormState extends State<DevTaskForm> {
           style: const TextStyle(color: HsColors.textSecondary, fontSize: 12.5),
         ),
         const SizedBox(height: 16),
-        FilledButton(onPressed: _save, child: Text(widget.task == null ? 'Assign' : 'Save')),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
+              : Text(widget.task == null ? 'Assign' : 'Save'),
+        ),
       ]),
     );
   }

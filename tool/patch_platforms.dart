@@ -429,6 +429,7 @@ class MainActivity : FlutterActivity() {
     private var pendingCallResult: MethodChannel.Result? = null
     private var pendingAudioResult: MethodChannel.Result? = null
     private var pendingDocResult: MethodChannel.Result? = null
+    private var pendingDocsResult: MethodChannel.Result? = null
 
     private val audioPermission: String
         get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
@@ -597,6 +598,21 @@ class MainActivity : FlutterActivity() {
                         startActivityForResult(intent, DOC_REQUEST)
                     } catch (e: Exception) {
                         pendingDocResult = null
+                        result.error("NO_PICKER", "No file picker on this phone", null)
+                    }
+                }
+                "pickDocuments" -> {
+                    // Several files at once (PDF, Excel, videos...) - copied into the app's cache.
+                    pendingDocsResult?.success(null)
+                    pendingDocsResult = result
+                    try {
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("*/*")
+                            .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        startActivityForResult(intent, DOCS_REQUEST)
+                    } catch (e: Exception) {
+                        pendingDocsResult = null
                         result.error("NO_PICKER", "No file picker on this phone", null)
                     }
                 }
@@ -845,8 +861,43 @@ class MainActivity : FlutterActivity() {
     }
 
     @Deprecated("Uses the classic activity result API (FlutterActivity)")
+    private fun copyPicked(uri: Uri): String {
+        var name = "file"
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) name = c.getString(0)
+        }
+        val dir = File(cacheDir, "picked_" + System.currentTimeMillis())
+        dir.mkdirs()
+        val safe = name.replace(Regex("[^A-Za-z0-9._ -]"), "_").ifBlank { "file" }
+        val dest = File(dir, safe)
+        val input = contentResolver.openInputStream(uri) ?: throw IllegalStateException("Cannot open the file")
+        input.use { source -> dest.outputStream().use { target -> source.copyTo(target) } }
+        return dest.absolutePath
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == DOCS_REQUEST) {
+            val res = pendingDocsResult ?: return
+            pendingDocsResult = null
+            val uris = mutableListOf<Uri>()
+            val clip = data?.clipData
+            if (clip != null) for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+            else data?.data?.let { uris.add(it) }
+            if (resultCode != RESULT_OK || uris.isEmpty()) {
+                res.success(null)
+                return
+            }
+            Thread {
+                try {
+                    val paths = uris.map { copyPicked(it) }
+                    runOnUiThread { res.success(paths) }
+                } catch (e: Exception) {
+                    runOnUiThread { res.error("COPY_FAILED", e.message, null) }
+                }
+            }.start()
+            return
+        }
         if (requestCode != DOC_REQUEST) return
         val result = pendingDocResult ?: return
         pendingDocResult = null
@@ -912,6 +963,7 @@ class MainActivity : FlutterActivity() {
         private const val AUDIO_REQUEST = 4712
         private const val CALLER_ID_REQUEST = 4713
         private const val DOC_REQUEST = 4714
+        private const val DOCS_REQUEST = 4715
     }
 }
 ''';

@@ -41,8 +41,12 @@ IconData _icon(String kind) => switch (kind) {
       _ => Icons.insert_drive_file_outlined,
     };
 
-/// Record voice / camera / gallery / document. Returns null when cancelled.
-Future<PendingFile?> pickAttachment(BuildContext context) async {
+/// Largest file the server takes (its web server limit).
+const maxUploadMb = 45;
+
+/// Record voice / camera / gallery (several photos / videos) / documents (several).
+/// Returns an empty list when cancelled.
+Future<List<PendingFile>> pickAttachments(BuildContext context) async {
   final choice = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
@@ -50,40 +54,65 @@ Future<PendingFile?> pickAttachment(BuildContext context) async {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(leading: const Icon(Icons.mic, color: HsColors.danger), title: const Text('Record a voice note'), onTap: () => Navigator.pop(ctx, 'voice')),
         ListTile(leading: const Icon(Icons.photo_camera_outlined), title: const Text('Take a photo'), onTap: () => Navigator.pop(ctx, 'camera')),
-        ListTile(leading: const Icon(Icons.photo_outlined), title: const Text('Photo from gallery'), onTap: () => Navigator.pop(ctx, 'gallery')),
-        ListTile(leading: const Icon(Icons.videocam_outlined), title: const Text('Video'), onTap: () => Navigator.pop(ctx, 'video')),
-        ListTile(leading: const Icon(Icons.description_outlined), title: const Text('Document (PDF, Excel, Word...)'), onTap: () => Navigator.pop(ctx, 'document')),
+        ListTile(leading: const Icon(Icons.videocam_outlined), title: const Text('Record a video'), onTap: () => Navigator.pop(ctx, 'camera_video')),
+        ListTile(
+          leading: const Icon(Icons.photo_library_outlined),
+          title: const Text('Photos / videos from gallery'),
+          subtitle: const Text('Select several at once'),
+          onTap: () => Navigator.pop(ctx, 'gallery'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.description_outlined),
+          title: const Text('Documents (PDF, Excel, Word...)'),
+          subtitle: const Text('Select several at once'),
+          onTap: () => Navigator.pop(ctx, 'documents'),
+        ),
         const SizedBox(height: 8),
       ]),
     ),
   );
-  if (choice == null || !context.mounted) return null;
+  if (choice == null || !context.mounted) return const [];
   try {
     final picker = ImagePicker();
     switch (choice) {
       case 'voice':
-        return await recordVoiceNote(context);
+        final v = await recordVoiceNote(context);
+        return v == null ? const [] : [v];
       case 'camera':
         final x = await picker.pickImage(source: ImageSource.camera, imageQuality: 80, maxWidth: 2200);
-        return x == null ? null : PendingFile(x.path);
+        return x == null ? const [] : [PendingFile(x.path)];
+      case 'camera_video':
+        final x = await picker.pickVideo(source: ImageSource.camera, maxDuration: const Duration(minutes: 3));
+        return x == null ? const [] : [PendingFile(x.path)];
       case 'gallery':
-        final x = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85, maxWidth: 2400);
-        return x == null ? null : PendingFile(x.path);
-      case 'video':
-        final x = await picker.pickVideo(source: ImageSource.gallery, maxDuration: const Duration(minutes: 5));
-        return x == null ? null : PendingFile(x.path);
-      case 'document':
+        final xs = await picker.pickMultipleMedia(imageQuality: 85, maxWidth: 2400);
+        return [for (final x in xs) PendingFile(x.path)];
+      case 'documents':
         if (!Platform.isAndroid) {
           showSnack('Documents can be added from the Android app.', error: true);
-          return null;
+          return const [];
         }
-        final path = await const MethodChannel('hipersign/phone').invokeMethod<String>('pickDocument');
-        return path == null ? null : PendingFile(path);
+        final paths = await const MethodChannel('hipersign/phone').invokeMethod<List<dynamic>>('pickDocuments');
+        return [for (final p in paths ?? const []) PendingFile(p.toString())];
     }
   } on PlatformException catch (e) {
     showSnack(e.message ?? 'Could not open the camera / files.', error: true);
   }
-  return null;
+  return const [];
+}
+
+/// Files over the upload limit are dropped with a message.
+List<PendingFile> withinLimit(List<PendingFile> files) {
+  final ok = <PendingFile>[];
+  for (final f in files) {
+    final mb = File(f.path).lengthSync() / (1024 * 1024);
+    if (mb > maxUploadMb) {
+      showSnack('${f.name} is too big (${mb.toStringAsFixed(0)} MB). Max $maxUploadMb MB - send a shorter video.', error: true);
+    } else {
+      ok.add(f);
+    }
+  }
+  return ok;
 }
 
 /// Records a voice note in a sheet (tap to stop). Returns null when cancelled.
@@ -199,16 +228,37 @@ class _RecorderState extends State<_Recorder> {
   }
 }
 
-/// Uploads files chosen in a form once the record exists. Returns how many failed.
-Future<int> uploadPending(Repository repo, String doctype, String name, List<PendingFile> files) async {
+/// Uploads files chosen in a form once the record exists, with a progress dialog (so nobody
+/// taps Save again while a video uploads). Returns how many failed.
+Future<int> uploadPending(Repository repo, String doctype, String name, List<PendingFile> files, {BuildContext? context}) async {
+  final progress = ValueNotifier<String>('Uploading files...');
+  final ctx = context ?? navigatorKey.currentContext;
+  if (ctx != null && files.isNotEmpty) {
+    showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(children: [
+            const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)),
+            const SizedBox(width: 16),
+            Expanded(child: ValueListenableBuilder<String>(valueListenable: progress, builder: (_, t, _) => Text(t))),
+          ]),
+        ),
+      ),
+    );
+  }
   var failed = 0;
-  for (final f in files) {
+  for (var i = 0; i < files.length; i++) {
+    progress.value = 'Uploading ${i + 1} of ${files.length}: ${files[i].name}';
     try {
-      await repo.uploadAttachment(doctype, name, f.path, voice: f.voice);
+      await repo.uploadAttachment(doctype, name, files[i].path, voice: files[i].voice);
     } catch (_) {
       failed++;
     }
   }
+  if (ctx != null && files.isNotEmpty && ctx.mounted) Navigator.of(ctx, rootNavigator: true).pop();
   if (failed > 0) showSnack('$failed file${failed > 1 ? 's' : ''} could not be uploaded - add again from the details.', error: true);
   return failed;
 }
@@ -235,8 +285,8 @@ class PendingAttachments extends StatelessWidget {
         ),
         TextButton.icon(
           onPressed: () async {
-            final f = await pickAttachment(context);
-            if (f != null) onChanged([...files, f]);
+            final picked = withinLimit(await pickAttachments(context));
+            if (picked.isNotEmpty) onChanged([...files, ...picked]);
           },
           icon: const Icon(Icons.attach_file),
           label: const Text('Photo / file'),
@@ -388,7 +438,11 @@ class _AttachmentsSectionState extends State<AttachmentsSection> {
           ),
           IconButton(
             tooltip: 'Add a file',
-            onPressed: () async => _add(await pickAttachment(context)),
+            onPressed: () async {
+              for (final f in withinLimit(await pickAttachments(context))) {
+                await _add(f);
+              }
+            },
             icon: const Icon(Icons.attach_file),
           ),
         ],
