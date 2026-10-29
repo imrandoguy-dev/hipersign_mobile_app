@@ -11,6 +11,7 @@ import '../../shared/models/development.dart';
 import '../../shared/widgets/attachments.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/reminder_picker.dart';
+import '../customers/party_picker.dart';
 
 const _filters = {'open': 'Open', 'late': 'Late', 'done': 'Done', 'all': 'All'};
 
@@ -408,6 +409,7 @@ class _DevTaskScreenState extends State<DevTaskScreen> {
                       const SizedBox(height: 4),
                       Text('${t.kind == 'team' ? 'Assigned to' : 'Developer'}: ${t.developerName}'),
                       if (t.kind == 'team' && t.team != null) Text('Team: ${t.team}'),
+                      if (t.customer != null) Text('Customer: ${t.customerName ?? t.customer}'),
                       if (t.assignedByName != null) Text('Assigned by: ${t.assignedByName}'),
                       if (t.project != null) Text('Project: ${t.project}'),
                       if (t.deadlineChanges > 0) Text('Deadline moved ${t.deadlineChanges} time${t.deadlineChanges > 1 ? 's' : ''}'),
@@ -502,6 +504,8 @@ class _DevTaskFormState extends State<DevTaskForm> {
   late String? _team = widget.task?.team ?? widget.team;
   List<String> _teams = [];
   List<PendingFile> _files = [];
+  late String? _customer = widget.task?.customer;
+  late String? _customerName = widget.task?.customerName ?? widget.task?.customer;
   bool get _isTeam => widget.kind == 'team';
 
   static DateTime _defaultDeadline() {
@@ -562,6 +566,7 @@ class _DevTaskFormState extends State<DevTaskForm> {
       'description': _desc.text.trim(),
       if (!_isTeam) 'project': _project.text.trim(),
       if (_isTeam) 'team': _team ?? '',
+      'customer': _customer ?? '',
       'developer': _developer,
       'deadline': _deadline.toUtc().toIso8601String(),
       'priority': _priority,
@@ -605,9 +610,40 @@ class _DevTaskFormState extends State<DevTaskForm> {
           const SizedBox(height: 12),
           PendingAttachments(files: _files, onChanged: (f) => setState(() => _files = f)),
         ],
+        const SizedBox(height: 12),
+        ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          tileColor: HsColors.card,
+          leading: const Icon(Icons.storefront_outlined),
+          title: Text(_customerName ?? 'Customer (optional)'),
+          subtitle: _customer == null ? const Text('Pick from ERPNext customers') : null,
+          trailing: _customer == null
+              ? const Icon(Icons.chevron_right)
+              : IconButton(
+                  tooltip: 'Remove',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => setState(() {
+                    _customer = null;
+                    _customerName = null;
+                  }),
+                ),
+          onTap: () async {
+            final p = await pickParty(context, kind: 'customer');
+            if (p != null && mounted) {
+              if (p.doctype != 'Customer') {
+                showSnack('Pick a customer (not a lead).', error: true);
+                return;
+              }
+              setState(() {
+                _customer = p.id;
+                _customerName = p.name;
+              });
+            }
+          },
+        ),
         if (!_isTeam) ...[
           const SizedBox(height: 12),
-          TextField(controller: _project, decoration: const InputDecoration(labelText: 'Project / client / module (optional)')),
+          TextField(controller: _project, decoration: const InputDecoration(labelText: 'Project / module (optional)')),
         ],
         if (_isTeam) ...[
           const SizedBox(height: 12),

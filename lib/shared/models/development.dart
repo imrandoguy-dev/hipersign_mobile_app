@@ -15,6 +15,8 @@ class DevTask {
     this.team,
     this.attachments = 0,
     this.created,
+    this.customer,
+    this.customerName,
     required this.title,
     required this.status,
     required this.priority,
@@ -41,6 +43,8 @@ class DevTask {
   final String? team; // Accounts, Marketing... (team tasks)
   final int attachments;
   final DateTime? created;
+  final String? customer;
+  final String? customerName;
   final String title;
   final String status; // Open | In Progress | In Review | Done | Cancelled
   final String priority;
@@ -69,6 +73,8 @@ class DevTask {
         team: str(j['team']),
         attachments: (j['attachments'] as num?)?.toInt() ?? 0,
         created: parseDate(j['created']),
+        customer: str(j['customer']),
+        customerName: str(j['customer_name']),
         title: j['title']?.toString() ?? '',
         status: j['status']?.toString() ?? 'Open',
         priority: j['priority']?.toString() ?? 'Medium',
