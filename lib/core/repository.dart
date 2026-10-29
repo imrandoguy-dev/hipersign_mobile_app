@@ -137,9 +137,19 @@ class Repository {
       api.post('activities.delete_activity', {'activity_id': id, 'reason': reason});
 
   /// Edit an open follow-up / meeting. Only the keys given are changed.
-  Future<Activity> updateActivity(String id, Map<String, dynamic> values) async {
+  /// Returns null when you took yourself out of the meeting.
+  Future<Activity?> updateActivity(String id, Map<String, dynamic> values) async {
     final data = await api.post('activities.update_activity', {'activity_id': id, ...values});
-    return Activity.fromJson(Map<String, dynamic>.from((data as Map)['activity'] as Map));
+    final a = (data as Map)['activity'];
+    return a is Map ? Activity.fromJson(Map<String, dynamic>.from(a)) : null;
+  }
+
+  /// Everyone who can be added to a meeting.
+  Future<List<MeetingPerson>> meetingPeople() async {
+    final data = await fetch('meeting_people', 'activities.people', const {});
+    return (((data as Map)['items'] as List?) ?? const [])
+        .map((e) => MeetingPerson((e as Map)['id'].toString(), e['name']?.toString() ?? e['id'].toString()))
+        .toList();
   }
 
   Future<Activity> updateStatus(String id, String status, {String? outcome, String? notes}) async {

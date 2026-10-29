@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -60,10 +62,16 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   Activity? get _existing => widget.existing;
   bool get _editing => _existing != null;
 
+  /// Who is in the meeting. Each person gets it on their own calendar.
+  List<MeetingPerson> _people = [];
+
   @override
   void initState() {
     super.initState();
+    final me = context.read<SessionController>().profile;
+    if (me != null) _people = [MeetingPerson(me.user, me.fullName)];
     final a = _existing;
+    if (a != null && a.people.isNotEmpty) _people = List.of(a.people);
     if (a != null) {
       _title.text = a.title;
       _notes.text = a.description ?? '';
@@ -159,6 +167,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         'reference_doctype': _party!.doctype,
         'reference_name': _party!.id,
       },
+      if (_type == 'Meeting' && !_samePeople(a.people)) 'people': jsonEncode(_people.map((p) => p.id).toList()),
       if (a.start == null || _start != a.start || (a.end != null && a.end!.difference(a.start!).inMinutes != minutes)) ...{
         'start': Repository.iso(_start),
         'end': Repository.iso(_start.add(Duration(minutes: minutes))),
@@ -170,9 +179,16 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     }
     setState(() => _saving = true);
     try {
-      await context.read<SessionController>().repo.updateActivity(a.id, values);
+      final saved = await context.read<SessionController>().repo.updateActivity(a.id, values);
       bumpRefresh();
       if (!mounted) return;
+      if (saved == null) {
+        showSnack('You are no longer in this meeting');
+        Navigator.of(context)
+          ..pop(true)
+          ..maybePop();
+        return;
+      }
       showSnack('Saved to ERP');
       Navigator.pop(context, true);
     } on ApiException catch (e) {
@@ -201,6 +217,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         'location': _location.text.trim().isEmpty ? null : _location.text.trim(),
         'idempotency_key': _idempotencyKey,
         if (_reminders != null) 'reminder_offsets': _reminders!.join(','),
+        if (_type == 'Meeting' && _people.isNotEmpty) 'people': jsonEncode(_people.map((p) => p.id).toList()),
       });
       bumpRefresh();
       if (!mounted) return;
@@ -211,6 +228,59 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  bool _samePeople(List<MeetingPerson> before) {
+    if (before.isEmpty) return _people.length <= 1;
+    return before.map((p) => p.id).toSet().containsAll(_people.map((p) => p.id)) && before.length == _people.length;
+  }
+
+  Future<void> _pickPeople() async {
+    final repo = context.read<SessionController>().repo;
+    List<MeetingPerson> all;
+    try {
+      all = await repo.meetingPeople();
+    } on ApiException catch (e) {
+      _snack(e.message);
+      return;
+    }
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<List<MeetingPerson>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _PeopleSheet(all: all, selected: _people.map((p) => p.id).toSet()),
+    );
+    if (picked != null && picked.isNotEmpty) setState(() => _people = picked);
+  }
+
+  Widget _peopleTile() {
+    return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      tileColor: Theme.of(context).colorScheme.surface,
+      leading: const Icon(Icons.group_add_outlined),
+      title: Text(_people.length <= 1 ? 'People' : 'People (${_people.length})'),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final p in _people)
+            Chip(
+              label: Text(p.name, overflow: TextOverflow.ellipsis),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onDeleted: _people.length > 1 ? () => setState(() => _people = _people.where((x) => x.id != p.id).toList()) : null,
+            ),
+          ActionChip(
+            avatar: const Icon(Icons.add, size: 18),
+            label: const Text('Add'),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            onPressed: _pickPeople,
+          ),
+        ]),
+      ),
+      onTap: _pickPeople,
+    );
   }
 
   Future<void> _pickParty() async {
@@ -297,11 +367,77 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         _remindersTile(),
         if (_type == 'Meeting') ...[
           const SizedBox(height: 12),
+          _peopleTile(),
+          const SizedBox(height: 12),
           TextField(controller: _location, decoration: const InputDecoration(labelText: 'Location (optional)')),
         ],
         const SizedBox(height: 12),
         TextField(controller: _notes, maxLines: 3, decoration: const InputDecoration(labelText: 'Notes (optional)')),
       ]),
+    );
+  }
+}
+
+
+/// Choose several people from the team, with search.
+class _PeopleSheet extends StatefulWidget {
+  const _PeopleSheet({required this.all, required this.selected});
+
+  final List<MeetingPerson> all;
+  final Set<String> selected;
+
+  @override
+  State<_PeopleSheet> createState() => _PeopleSheetState();
+}
+
+class _PeopleSheetState extends State<_PeopleSheet> {
+  late final Set<String> _sel = {...widget.selected};
+  String _q = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _q.toLowerCase();
+    final list = widget.all.where((p) => q.isEmpty || p.name.toLowerCase().contains(q) || p.id.toLowerCase().contains(q)).toList();
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.8,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+            child: Row(children: [
+              Expanded(child: Text('People in this meeting', style: Theme.of(context).textTheme.titleMedium)),
+              FilledButton(
+                onPressed: _sel.isEmpty
+                    ? null
+                    : () => Navigator.pop(context, widget.all.where((p) => _sel.contains(p.id)).toList()),
+                child: Text('Done (${_sel.length})'),
+              ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search name'),
+              onChanged: (v) => setState(() => _q = v.trim()),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: list.length,
+              itemBuilder: (_, i) {
+                final p = list[i];
+                return CheckboxListTile(
+                  value: _sel.contains(p.id),
+                  title: Text(p.name),
+                  subtitle: p.name == p.id ? null : Text(p.id, style: const TextStyle(fontSize: 12)),
+                  onChanged: (v) => setState(() => v == true ? _sel.add(p.id) : _sel.remove(p.id)),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }

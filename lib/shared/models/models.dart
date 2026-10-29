@@ -142,6 +142,7 @@ class Activity {
     this.party,
     this.history = const [],
     this.reminderOffsets,
+    this.people = const [],
   });
 
   final String id;
@@ -164,6 +165,7 @@ class Activity {
   final Party? party;
   final List<HistoryEntry> history;
   final List<int>? reminderOffsets; // own reminders (minutes before); null = my reminder setting
+  final List<MeetingPerson> people; // everyone in this meeting (each has their own copy)
 
   bool get isOpen => status == 'Pending' || status == 'In Progress' || status == 'Rescheduled';
 
@@ -192,7 +194,24 @@ class Activity {
         reminderOffsets: j['reminder_offsets'] is List
             ? (j['reminder_offsets'] as List).map((e) => (e as num).toInt()).toList()
             : null,
+        people: ((j['people'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => MeetingPerson(
+                  e['id']?.toString() ?? '',
+                  e['name']?.toString() ?? e['id']?.toString() ?? '',
+                  e['status']?.toString() ?? 'Pending',
+                ))
+            .where((p) => p.id.isNotEmpty)
+            .toList(),
       );
+}
+
+class MeetingPerson {
+  const MeetingPerson(this.id, this.name, [this.status = 'Pending']);
+
+  final String id;
+  final String name;
+  final String status;
 }
 
 class TrainerSlot {

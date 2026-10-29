@@ -368,6 +368,8 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
     final rows = <(IconData, String, String)>[
       (Icons.category_outlined, 'Type', a.activityType),
       if (a.visitType != null) (Icons.tour_outlined, 'Visit type', a.visitType!),
+      if (a.people.length > 1)
+        (Icons.groups_2_outlined, 'People', a.people.map((p) => p.status == 'Completed' ? '${p.name} ✓' : p.name).join(', ')),
       if (a.location != null) (Icons.place_outlined, 'Location', a.location!),
       if (a.outcome != null) (Icons.flag_outlined, 'Outcome', a.outcome!),
       if (a.completionNotes != null) (Icons.notes, 'Notes', a.completionNotes!),
