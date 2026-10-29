@@ -26,11 +26,14 @@ Future<void> updateHomeWidget(Repository repo) async {
       final work = openFirst(d.items.where((a) =>
           a.start != null && a.start!.year == date.year && a.start!.month == date.month && a.start!.day == date.day));
       // Open tasks: today (until done) and on their deadline day; not repeated on every day.
+      // Tasks: open ones once, under today (with their due date), until done; finished ones
+      // only on their deadline day.
+      bool sameDay(DateTime x) => x.year == date.year && x.month == date.month && x.day == date.day;
       final dayTasks = d.tasks.where((t) {
         final dl = t.deadline;
         if (dl == null) return false;
-        final onDeadline = dl.year == date.year && dl.month == date.month && dl.day == date.day;
-        return onDeadline || (i == 0 && t.isOpen && taskOnDay(t, date));
+        if (t.isOpen) return i == 0 && taskOnDay(t, date);
+        return sameDay(dl);
       }).toList();
       if (work.isEmpty && dayTasks.isEmpty && i > 0) continue; // only today is listed when empty
       days.add({
@@ -44,13 +47,7 @@ Future<void> updateHomeWidget(Repository repo) async {
               'done': !a.isOpen,
               'overdue': a.isOpen && a.start!.isBefore(now),
             },
-          for (final t in dayTasks)
-            {
-              'time': DateFormat.jm().format(t.deadline!),
-              'text': 'Task: ${t.title}',
-              'done': !t.isOpen,
-              'overdue': t.isOpen && t.deadline!.isBefore(now),
-            },
+          for (final t in dayTasks) _taskRow(t, date, now),
         ],
       });
     }
@@ -92,6 +89,20 @@ Future<void> updateHomeWidget(Repository repo) async {
   } catch (_) {
     // Offline or no widget support: the widget keeps its last copy.
   }
+}
+
+/// A task row: the time when it is due that day ("" for a date-only deadline), otherwise
+/// its due date in the text, so an open task is not mistaken for something at that time today.
+Map<String, dynamic> _taskRow(DevTask t, DateTime date, DateTime now) {
+  final dl = t.deadline!;
+  final dueToday = dl.year == date.year && dl.month == date.month && dl.day == date.day;
+  final midnight = dl.hour == 0 && dl.minute == 0;
+  return {
+    'time': dueToday && !midnight ? DateFormat.jm().format(dl) : '',
+    'text': dueToday || !t.isOpen ? 'Task: ${t.title}' : 'Task: ${t.title} · due ${DateFormat('EEE d MMM').format(dl)}',
+    'done': !t.isOpen,
+    'overdue': t.isOpen && dl.isBefore(now),
+  };
 }
 
 /// How far ahead the widget looks.
