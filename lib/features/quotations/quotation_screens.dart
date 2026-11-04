@@ -284,9 +284,9 @@ class _QuotationFormState extends State<QuotationForm> {
                 FilledButton.tonalIcon(onPressed: _addItem, icon: const Icon(Icons.add), label: const Text('Add item')),
               ]),
               if (_lines.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text(_inv ? 'Add the products or services to bill.' : 'Add the products or services to quote.', style: TextStyle(color: HsColors.textSecondary)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(_inv ? 'Add the products or services to bill.' : 'Add the products or services to quote.', style: const TextStyle(color: HsColors.textSecondary)),
                 ),
               for (var i = 0; i < _lines.length; i++)
                 Card(
