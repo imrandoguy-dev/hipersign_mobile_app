@@ -203,8 +203,8 @@ class Repository {
 
   // ------------------------------------------------------------ quotations
 
-  Future<(List<QuoteCompany>, String?)> quoteOptions() async {
-    final d = Map<String, dynamic>.from(await api.get('quotations.options') as Map);
+  Future<(List<QuoteCompany>, String?)> quoteOptions({bool invoice = false}) async {
+    final d = Map<String, dynamic>.from(await api.get(invoice ? 'invoices.options' : 'quotations.options') as Map);
     final companies = ((d['companies'] as List?) ?? const []).map((e) {
       final c = Map<String, dynamic>.from(e as Map);
       return QuoteCompany(
@@ -212,6 +212,7 @@ class Repository {
         currency: c['currency']?.toString() ?? '',
         taxes: ((c['taxes'] as List?) ?? const []).map((t) => t.toString()).toList(),
         defaultTax: str(c['default_tax']),
+        modes: PayMode.listFrom(c['modes']),
       );
     }).toList();
     return (companies, str(d['default_company']));
@@ -236,6 +237,27 @@ class Repository {
   Future<String> quotePdf(String id) async {
     final path = '${Directory.systemTemp.path}/$id-${DateTime.now().millisecondsSinceEpoch}.pdf';
     await api.downloadTo('quotations.pdf', {'quotation_id': id}, path, what: 'quotation');
+    return path;
+  }
+
+  // ------------------------------------------------------------ invoices & payments
+
+  Invoice _inv(dynamic d) => Invoice.fromJson(Map<String, dynamic>.from(d as Map));
+
+  Future<Invoice> createInvoice(Map<String, dynamic> values) async => _inv(await api.post('invoices.create', values));
+
+  Future<Invoice> invoice(String id) async => _inv(await api.get('invoices.get_invoice', {'invoice_id': id}));
+
+  Future<Invoice> submitInvoice(String id) async => _inv(await api.post('invoices.submit', {'invoice_id': id}));
+
+  Future<Invoice> recordPayment(String id, double amount, String mode, String? reference) async => _inv(await api.post(
+      'invoices.record_payment', {'invoice_id': id, 'amount': amount, 'mode_of_payment': mode, 'reference_no': reference}));
+
+  Future<void> sendInvoiceWhatsApp(String id, String phone) => api.post('invoices.send_whatsapp', {'invoice_id': id, 'phone': phone});
+
+  Future<String> invoicePdf(String id) async {
+    final path = '${Directory.systemTemp.path}/$id-${DateTime.now().millisecondsSinceEpoch}.pdf';
+    await api.downloadTo('invoices.pdf', {'invoice_id': id}, path, what: 'invoice');
     return path;
   }
 

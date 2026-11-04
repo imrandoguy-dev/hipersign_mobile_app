@@ -13,11 +13,13 @@ import '../../shared/maps/maps_links.dart';
 import '../../shared/models/models.dart';
 import '../../shared/models/sales.dart';
 import '../../shared/widgets/activity_card.dart';
+import '../../shared/widgets/attachments.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../activities/activity_detail_screen.dart';
 import '../activities/activity_form.dart';
 import '../notes/notes.dart';
+import '../quotations/invoice_screens.dart';
 import '../quotations/quotation_screens.dart';
 import '../recordings/recording_widgets.dart';
 import '../recordings/recordings_screen.dart';
@@ -250,6 +252,15 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           _load();
                         },
                       ),
+                    if (profile.can('invoices'))
+                      ActionChip(
+                        avatar: const Icon(Icons.receipt_long_outlined, size: 18),
+                        label: const Text('Invoice'),
+                        onPressed: () async {
+                          await Navigator.push(context, MaterialPageRoute(builder: (_) => QuotationForm(party: p, invoice: true)));
+                          _load();
+                        },
+                      ),
                     ActionChip(
                       avatar: const Icon(Icons.note_add_outlined, size: 18),
                       label: const Text('Note'),
@@ -303,6 +314,33 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                       ),
                     ),
                 ],
+                if (_journey != null && _journey!.invoices.isNotEmpty) ...[
+                  SectionHeader('Invoices', count: _journey!.invoices.length),
+                  for (final inv in _journey!.invoices)
+                    Card(
+                      elevation: 0,
+                      color: HsColors.card,
+                      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      child: ListTile(
+                        leading: Icon(Icons.receipt_long_outlined, color: inv.outstanding > 0 ? HsColors.danger : HsColors.navy),
+                        title: Text(inv.id),
+                        subtitle: Text([
+                          inv.status,
+                          if (inv.date != null) fmtDay(inv.date!),
+                          if (inv.outstanding > 0 && inv.status != 'Draft' && inv.outstandingText != null) 'due ${inv.outstandingText}',
+                        ].join(' · ')),
+                        trailing: Text(inv.totalText, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        onTap: () async {
+                          await Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(id: inv.id, party: p)));
+                          _load();
+                        },
+                      ),
+                    ),
+                ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: AttachmentsSection(key: ValueKey('files-${p.doctype}-${p.id}'), doctype: p.doctype, name: p.id, title: 'Voice notes & files'),
+                ),
                 ..._notesSection(p),
                 if (_next != null) ...[
                   const SectionHeader('Next activity'),

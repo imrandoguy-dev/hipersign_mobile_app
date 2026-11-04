@@ -21,10 +21,11 @@ class JourneyStep {
 }
 
 class Journey {
-  Journey({this.stage, this.steps = const [], this.quotations = const []});
+  Journey({this.stage, this.steps = const [], this.quotations = const [], this.invoices = const []});
   final JourneyStep? stage;
   final List<JourneyStep> steps;
   final List<QuoteSummary> quotations;
+  final List<InvoiceSummary> invoices;
 
   static Journey? fromJson(dynamic raw) {
     if (raw is! Map) return null;
@@ -36,6 +37,9 @@ class Journey {
           .map((e) => Map<String, dynamic>.from(e as Map))
           .map((q) => QuoteSummary(id: q['id'].toString(), status: q['status']?.toString() ?? '', totalText: q['total_text']?.toString() ?? '',
               date: DateTime.tryParse(q['date']?.toString() ?? '')))
+          .toList(),
+      invoices: ((j['invoices'] as List?) ?? const [])
+          .map((e) => InvoiceSummary.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList(),
     );
   }
@@ -116,9 +120,126 @@ class Quote {
 }
 
 class QuoteCompany {
-  QuoteCompany({required this.name, required this.currency, this.taxes = const [], this.defaultTax});
+  QuoteCompany({required this.name, required this.currency, this.taxes = const [], this.defaultTax, this.modes = const []});
   final String name;
   final String currency;
   final List<String> taxes;
   final String? defaultTax;
+  final List<PayMode> modes; // payment modes with an account for this company (invoices)
+}
+
+class PayMode {
+  const PayMode(this.name, this.type);
+  final String name;
+  final String type; // Cash | Bank | General | Phone
+  bool get needsReference => type != 'Cash';
+
+  static List<PayMode> listFrom(dynamic raw) => ((raw as List?) ?? const [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .map((m) => PayMode(m['name'].toString(), m['type']?.toString() ?? ''))
+      .toList();
+}
+
+class InvoiceSummary {
+  InvoiceSummary({required this.id, required this.status, required this.totalText, this.outstanding = 0, this.outstandingText, this.date});
+  final String id;
+  final String status;
+  final String totalText;
+  final double outstanding;
+  final String? outstandingText;
+  final DateTime? date;
+
+  factory InvoiceSummary.fromJson(Map<String, dynamic> j) => InvoiceSummary(
+        id: j['id'].toString(),
+        status: j['status']?.toString() ?? '',
+        totalText: j['total_text']?.toString() ?? '',
+        outstanding: _d(j['outstanding']),
+        outstandingText: str(j['outstanding_text']),
+        date: DateTime.tryParse(j['date']?.toString() ?? ''),
+      );
+}
+
+class InvoicePayment {
+  InvoicePayment({required this.id, required this.amountText, this.mode, this.reference, this.date, this.by});
+  final String id;
+  final String amountText;
+  final String? mode;
+  final String? reference;
+  final DateTime? date;
+  final String? by;
+}
+
+class Invoice {
+  Invoice({
+    required this.id,
+    required this.status,
+    required this.submitted,
+    required this.party,
+    required this.totalText,
+    this.total = 0,
+    this.outstanding = 0,
+    this.outstandingText,
+    this.netText,
+    this.taxText,
+    this.date,
+    this.dueDate,
+    this.company,
+    this.currency,
+    this.by,
+    this.items = const [],
+    this.payments = const [],
+    this.modes = const [],
+  });
+
+  final String id;
+  final String status;
+  final bool submitted;
+  final String party;
+  final String totalText;
+  final double total;
+  final double outstanding;
+  final String? outstandingText;
+  final String? netText;
+  final String? taxText;
+  final DateTime? date;
+  final DateTime? dueDate;
+  final String? company;
+  final String? currency;
+  final String? by;
+  final List<QuoteLine> items;
+  final List<InvoicePayment> payments;
+  final List<PayMode> modes;
+
+  bool get paid => submitted && outstanding <= 0;
+
+  factory Invoice.fromJson(Map<String, dynamic> j) => Invoice(
+        id: j['id'].toString(),
+        status: j['status']?.toString() ?? '',
+        submitted: j['submitted'] == true,
+        party: j['party']?.toString() ?? '',
+        totalText: j['total_text']?.toString() ?? '',
+        total: _d(j['total']),
+        outstanding: _d(j['outstanding']),
+        outstandingText: str(j['outstanding_text']),
+        netText: str(j['net_text']),
+        taxText: str(j['tax_text']),
+        date: DateTime.tryParse(j['date']?.toString() ?? ''),
+        dueDate: DateTime.tryParse(j['due_date']?.toString() ?? ''),
+        company: str(j['company']),
+        currency: str(j['currency']),
+        by: str(j['by']),
+        items: ((j['items'] as List?) ?? const []).map((e) => QuoteLine.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+        payments: ((j['payments'] as List?) ?? const [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .map((m) => InvoicePayment(
+                  id: m['id'].toString(),
+                  amountText: m['amount_text']?.toString() ?? '',
+                  mode: str(m['mode']),
+                  reference: str(m['reference']),
+                  date: DateTime.tryParse(m['date']?.toString() ?? ''),
+                  by: str(m['by']),
+                ))
+            .toList(),
+        modes: PayMode.listFrom(j['modes']),
+      );
 }

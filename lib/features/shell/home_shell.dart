@@ -20,6 +20,8 @@ import '../calendar/calendar_screen.dart';
 import '../calls/after_call_screen.dart';
 import '../customers/customer_detail_screen.dart';
 import '../customers/customers_screen.dart';
+import '../customers/party_picker.dart';
+import '../quotations/quotation_screens.dart';
 import '../customers/dialer_sheet.dart';
 import '../trials/book_trial_screen.dart';
 import '../development/development_screen.dart';
@@ -219,6 +221,26 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               onTap: () {
                 Navigator.pop(sheetContext);
                 openActivityForm(context, type: 'Meeting');
+              },
+            ),
+          if (p.can('tasks'))
+            ListTile(
+              leading: const Icon(Icons.task_alt),
+              title: const Text('New task'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const DevTaskForm(kind: 'team')));
+              },
+            ),
+          if (p.can('invoices'))
+            ListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: const Text('New invoice / payment'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final party = await pickParty(context);
+                if (party == null || !mounted) return;
+                Navigator.push(context, MaterialPageRoute(builder: (_) => QuotationForm(party: party, invoice: true)));
               },
             ),
           if (p.can('trial_booking'))

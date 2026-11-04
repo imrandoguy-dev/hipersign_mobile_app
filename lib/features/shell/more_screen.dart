@@ -10,7 +10,6 @@ import '../calls/calls_screen.dart';
 import '../concerns/concerns_screen.dart';
 import '../feedback/feedback_screen.dart';
 import '../reports/daily_report_screen.dart';
-import '../targets/targets.dart';
 import '../development/development_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../recordings/recordings_screen.dart';
@@ -56,8 +55,6 @@ class MoreScreen extends StatelessWidget {
           _Tile(icon: Icons.assignment_turned_in_outlined, title: 'My daily report', onTap: () => open(const DailyReportScreen())),
         if (p.can('team_reports'))
           _Tile(icon: Icons.groups_outlined, title: 'Team daily report', onTap: () => open(const TeamReportScreen())),
-        if (p.can('call_targets'))
-          _Tile(icon: Icons.track_changes, title: 'Call targets', onTap: () => open(const TargetsScreen())),
         if (p.can('customers'))
           _Tile(icon: Icons.call_outlined, title: 'Calls', onTap: () => open(const CallsScreen())),
         if (p.can('meetings'))

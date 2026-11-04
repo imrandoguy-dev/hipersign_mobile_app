@@ -15,13 +15,16 @@ import '../../core/auth/session.dart';
 import '../../shared/models/models.dart';
 import '../../shared/models/sales.dart';
 import '../../shared/widgets/common.dart';
+import 'invoice_screens.dart';
 
 String _money(double v) => NumberFormat('#,##0.##').format(v);
 
-/// New quotation for a customer / lead / deal: items, quantities, prices, taxes.
+/// New quotation (or, with invoice: true, a sales invoice) for a customer / lead / deal:
+/// items, quantities, prices, taxes - and for an invoice, the payment received now.
 class QuotationForm extends StatefulWidget {
-  const QuotationForm({super.key, required this.party});
+  const QuotationForm({super.key, required this.party, this.invoice = false});
   final Party party;
+  final bool invoice;
 
   @override
   State<QuotationForm> createState() => _QuotationFormState();
@@ -35,6 +38,21 @@ class _QuotationFormState extends State<QuotationForm> {
   int _validDays = 30;
   final _terms = TextEditingController();
   bool _loading = true;
+  // invoice: payment received now
+  bool _paidNow = false;
+  bool _paidFull = true;
+  final _amount = TextEditingController();
+  final _reference = TextEditingController();
+  String? _mode;
+
+  bool get _inv => widget.invoice;
+
+  PayMode? get _payMode {
+    for (final m in _co?.modes ?? const <PayMode>[]) {
+      if (m.name == _mode) return m;
+    }
+    return null;
+  }
 
   QuoteCompany? get _co {
     for (final c in _companies) {
@@ -48,12 +66,13 @@ class _QuotationFormState extends State<QuotationForm> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        final (companies, def) = await context.read<SessionController>().repo.quoteOptions();
+        final (companies, def) = await context.read<SessionController>().repo.quoteOptions(invoice: _inv);
         if (!mounted) return;
         setState(() {
           _companies = companies;
           _company = def ?? (companies.isNotEmpty ? companies.first.name : null);
           _tax = _co?.defaultTax;
+          _mode = _co?.modes.isNotEmpty == true ? _co!.modes.first.name : null;
         });
       } on ApiException catch (e) {
         showSnack(e.message, error: true);
@@ -66,6 +85,8 @@ class _QuotationFormState extends State<QuotationForm> {
   @override
   void dispose() {
     _terms.dispose();
+    _amount.dispose();
+    _reference.dispose();
     super.dispose();
   }
 
@@ -120,7 +141,98 @@ class _QuotationFormState extends State<QuotationForm> {
     return QuoteLine(code: l.code, name: l.name, qty: q, rate: r, uom: l.uom, description: l.description);
   }
 
+  Future<void> _saveInvoice({required bool submit}) async {
+    if (_company == null) return showMissing(context, 'Company not selected', 'Choose which company the invoice is from.');
+    if (_lines.isEmpty) {
+      return showMissing(context, 'No items', 'Add at least one item or service.', fixLabel: 'Add item', onFix: _addItem);
+    }
+    double? amount;
+    if (_paidNow) {
+      if (_mode == null) {
+        return showMissing(context, 'No payment mode',
+            'In ERP, open Mode of Payment (Cash, UPI, Bank...) and set the account for $_company.');
+      }
+      if (!_paidFull) {
+        amount = double.tryParse(_amount.text.replaceAll(',', '').trim());
+        if (amount == null || amount <= 0) return showMissing(context, 'Amount received', 'Enter the amount the customer paid.');
+      }
+    }
+    final repo = context.read<SessionController>().repo;
+    final inv = await runWrite(
+      context,
+      () => repo.createInvoice({
+        'doctype': widget.party.doctype,
+        'name': widget.party.id,
+        'company': _company,
+        'taxes': _tax,
+        'remarks': _terms.text.trim().isEmpty ? null : _terms.text.trim(),
+        'submit': submit || _paidNow ? 1 : 0,
+        'items': [for (final l in _lines) {'code': l.code, 'qty': l.qty, 'rate': l.rate}],
+        if (_paidNow) ...{
+          'paid_amount': _paidFull ? 'full' : amount,
+          'mode_of_payment': _mode,
+          'reference_no': _reference.text.trim().isEmpty ? null : _reference.text.trim(),
+        },
+      }),
+      success: _paidNow ? 'Invoice made and payment saved' : (submit ? 'Invoice made' : 'Invoice saved as draft'),
+    );
+    if (inv == null || !mounted) return;
+    bumpRefresh();
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => InvoiceScreen(id: inv.id, party: widget.party)));
+  }
+
+  List<Widget> _paymentFields() {
+    final co = _co;
+    final modes = co?.modes ?? const <PayMode>[];
+    return [
+      const SizedBox(height: 8),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _paidNow,
+        title: const Text('Payment received now', style: TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: const Text('Saves the payment against this invoice'),
+        onChanged: (v) => setState(() => _paidNow = v),
+      ),
+      if (_paidNow) ...[
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: true, label: Text('Full amount')),
+            ButtonSegment(value: false, label: Text('Part payment')),
+          ],
+          selected: {_paidFull},
+          onSelectionChanged: (s) => setState(() => _paidFull = s.first),
+        ),
+        if (!_paidFull) ...[
+          const SizedBox(height: 10),
+          TextField(
+            controller: _amount,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: 'Amount received${co != null ? ' (${co.currency})' : ''}'),
+          ),
+        ],
+        const SizedBox(height: 10),
+        if (modes.isEmpty)
+          const Text('No payment modes have an account for this company. Set them in ERP: Mode of Payment.',
+              style: TextStyle(color: HsColors.danger))
+        else
+          DropdownButtonFormField<String>(
+            key: ValueKey('mode-$_company'),
+            initialValue: modes.any((m) => m.name == _mode) ? _mode : modes.first.name,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Paid by'),
+            items: [for (final m in modes) DropdownMenuItem(value: m.name, child: Text(m.name))],
+            onChanged: (v) => setState(() => _mode = v),
+          ),
+        if (_payMode?.needsReference ?? false) ...[
+          const SizedBox(height: 10),
+          TextField(controller: _reference, decoration: const InputDecoration(labelText: 'UTR / cheque / reference no. (optional)')),
+        ],
+      ],
+    ];
+  }
+
   Future<void> _save({required bool submit}) async {
+    if (_inv) return _saveInvoice(submit: submit);
     if (_company == null) return showMissing(context, 'Company not selected', 'Choose which company the quotation is from.');
     if (_lines.isEmpty) {
       return showMissing(context, 'No items', 'Add at least one item or service.', fixLabel: 'Add item', onFix: _addItem);
@@ -149,7 +261,7 @@ class _QuotationFormState extends State<QuotationForm> {
   Widget build(BuildContext context) {
     final co = _co;
     return Scaffold(
-      appBar: AppBar(title: Text('Quotation - ${widget.party.name}')),
+      appBar: AppBar(title: Text('${_inv ? 'Invoice' : 'Quotation'} - ${widget.party.name}')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 120), children: [
@@ -162,6 +274,7 @@ class _QuotationFormState extends State<QuotationForm> {
                   onChanged: (v) => setState(() {
                     _company = v;
                     _tax = _co?.defaultTax;
+                    _mode = _co?.modes.isNotEmpty == true ? _co!.modes.first.name : null;
                   }),
                 ),
               const SizedBox(height: 12),
@@ -173,7 +286,7 @@ class _QuotationFormState extends State<QuotationForm> {
               if (_lines.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Text('Add the products or services to quote.', style: TextStyle(color: HsColors.textSecondary)),
+                  child: Text(_inv ? 'Add the products or services to bill.' : 'Add the products or services to quote.', style: TextStyle(color: HsColors.textSecondary)),
                 ),
               for (var i = 0; i < _lines.length; i++)
                 Card(
@@ -209,7 +322,8 @@ class _QuotationFormState extends State<QuotationForm> {
                   ],
                   onChanged: (v) => setState(() => _tax = v),
                 ),
-              const SizedBox(height: 12),
+              if (!_inv) const SizedBox(height: 12),
+              if (!_inv)
               DropdownButtonFormField<int>(
                 initialValue: _validDays,
                 decoration: const InputDecoration(labelText: 'Valid for'),
@@ -217,15 +331,23 @@ class _QuotationFormState extends State<QuotationForm> {
                 onChanged: (v) => setState(() => _validDays = v ?? 30),
               ),
               const SizedBox(height: 12),
-              TextField(controller: _terms, minLines: 2, maxLines: 6, decoration: const InputDecoration(labelText: 'Terms / notes (optional)', alignLabelWithHint: true)),
+              TextField(controller: _terms, minLines: 2, maxLines: 6, decoration: InputDecoration(labelText: _inv ? 'Remarks (optional)' : 'Terms / notes (optional)', alignLabelWithHint: true)),
+              if (_inv) ..._paymentFields(),
             ]),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Row(children: [
-            Expanded(child: OutlinedButton(onPressed: () => _save(submit: false), child: const Text('Save draft'))),
-            const SizedBox(width: 8),
-            Expanded(child: FilledButton(onPressed: () => _save(submit: true), child: const Text('Save & submit'))),
+            if (!(_inv && _paidNow)) ...[
+              Expanded(child: OutlinedButton(onPressed: () => _save(submit: false), child: const Text('Save draft'))),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: FilledButton(
+                onPressed: () => _save(submit: true),
+                child: Text(!_inv ? 'Save & submit' : (_paidNow ? 'Make invoice & save payment' : 'Make invoice')),
+              ),
+            ),
           ]),
         ),
       ),
@@ -409,6 +531,26 @@ class _QuotationScreenState extends State<QuotationScreen> {
     await runWrite(context, () => repo.sendQuoteWhatsApp(widget.id, phone!).then((_) => true), success: 'Quotation sent on WhatsApp');
   }
 
+  Future<void> _makeInvoice() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Make invoice?'),
+        content: const Text('An invoice with the same items, prices and taxes is made in ERP. You can take the payment on the next screen.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Make invoice')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final repo = context.read<SessionController>().repo;
+    final inv = await runWrite(context, () => repo.createInvoice({'quotation_id': widget.id, 'submit': 1}), success: 'Invoice made');
+    if (inv == null || !mounted) return;
+    bumpRefresh();
+    Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(id: inv.id, party: widget.party)));
+  }
+
   Future<void> _submit() async {
     final repo = context.read<SessionController>().repo;
     final q = await runWrite(context, () => repo.submitQuote(widget.id), success: 'Submitted');
@@ -482,6 +624,10 @@ class _QuotationScreenState extends State<QuotationScreen> {
               if (!q.submitted) ...[
                 const SizedBox(height: 8),
                 OutlinedButton.icon(onPressed: _submit, icon: const Icon(Icons.check), label: const Text('Submit (final)')),
+              ],
+              if (context.read<SessionController>().profile?.can('invoices') ?? false) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(onPressed: _makeInvoice, icon: const Icon(Icons.receipt_long_outlined), label: const Text('Make invoice from this')),
               ],
             ]),
     );
