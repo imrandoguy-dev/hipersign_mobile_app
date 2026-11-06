@@ -4,7 +4,7 @@ int _int(dynamic v) => (v as num?)?.toInt() ?? 0;
 
 /// A file or voice note on a task, development work, trial / training, suggestion or concern.
 class Attachment {
-  Attachment({required this.id, required this.name, required this.kind, this.size = 0, this.by, this.byUser, this.at});
+  Attachment({required this.id, required this.name, required this.kind, this.size = 0, this.by, this.byUser, this.at, this.record, this.viaDoctype, this.viaName});
 
   final String id;
   final String name;
@@ -13,6 +13,13 @@ class Attachment {
   final String? by;
   final String? byUser;
   final DateTime? at;
+  final String? record; // which meeting / task it is on (customer page)
+  // Opened from a customer's page: the customer it is about (lets the server check access that way).
+  final String? viaDoctype;
+  final String? viaName;
+
+  Attachment via(String doctype, String party) => Attachment(
+      id: id, name: name, kind: kind, size: size, by: by, byUser: byUser, at: at, record: record, viaDoctype: doctype, viaName: party);
 
   String get ext => name.contains('.') ? name.split('.').last.toLowerCase() : 'bin';
 
@@ -24,6 +31,7 @@ class Attachment {
         by: str(j['by']),
         byUser: str(j['by_user']),
         at: parseDate(j['at']),
+        record: str(j['record']),
       );
 }
 

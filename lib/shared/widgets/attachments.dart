@@ -316,12 +316,17 @@ class PendingAttachments extends StatelessWidget {
 
 /// Files and voice notes on a saved record: play / open, add more, remove your own.
 class AttachmentsSection extends StatefulWidget {
-  const AttachmentsSection({super.key, required this.doctype, required this.name, this.title = 'Files & voice notes', this.canAdd = true, this.initial});
+  const AttachmentsSection(
+      {super.key, required this.doctype, required this.name, this.title = 'Files & voice notes', this.canAdd = true, this.initial, this.wholeCustomer = false});
   final String doctype;
   final String name;
   final String title;
   final bool canAdd;
   final List<Attachment>? initial;
+
+  /// On a customer's page: also show the files of its meetings, follow-ups, trainings,
+  /// development and tasks, section by section. New files go on the customer.
+  final bool wholeCustomer;
 
   @override
   State<AttachmentsSection> createState() => _AttachmentsSectionState();
@@ -330,6 +335,7 @@ class AttachmentsSection extends StatefulWidget {
 class _AttachmentsSectionState extends State<AttachmentsSection> {
   final _player = RecordingPlayer();
   List<Attachment>? _items;
+  List<(String, List<Attachment>)> _groups = const [];
   int _uploading = 0;
   String? _opening;
 
@@ -350,6 +356,15 @@ class _AttachmentsSectionState extends State<AttachmentsSection> {
 
   Future<void> _load() async {
     try {
+      if (widget.wholeCustomer) {
+        final groups = await _repo.customerFiles(widget.doctype, widget.name);
+        if (!mounted) return;
+        setState(() {
+          _items = [for (final g in groups) if (g.$1 == 'Customer') ...g.$2];
+          _groups = groups.where((g) => g.$1 != 'Customer').toList();
+        });
+        return;
+      }
       final items = await _repo.attachments(widget.doctype, widget.name);
       if (mounted) setState(() => _items = items);
     } on ApiException catch (e) {
@@ -448,10 +463,27 @@ class _AttachmentsSectionState extends State<AttachmentsSection> {
         ],
       ]),
       if (items == null) const LinearProgressIndicator(),
-      if (items != null && items.isEmpty)
+      if (items != null && items.isEmpty && _groups.isEmpty)
         const Text('Nothing added yet.', style: TextStyle(color: HsColors.textSecondary)),
-      for (final a in items ?? const <Attachment>[])
-        Card(
+      for (final a in items ?? const <Attachment>[]) _card(a, me),
+      for (final g in _groups) ...[
+        Padding(
+          padding: const EdgeInsets.only(top: 14, bottom: 2),
+          child: Text('${g.$1} (${g.$2.length})', style: const TextStyle(fontWeight: FontWeight.w700, color: HsColors.textSecondary)),
+        ),
+        for (final a in g.$2) _card(a, me),
+      ],
+      if (items != null && items.any((a) => a.byUser == me))
+        const Padding(
+          padding: EdgeInsets.only(top: 4),
+          child: Text('Press and hold your own file to remove it.', style: TextStyle(color: HsColors.textSecondary, fontSize: 11.5)),
+        ),
+    ]);
+  }
+
+  Widget _card(Attachment a, String? me) {
+    String sub(List<String> parts) => [if (a.record != null) a.record!, ...parts].where((x) => x.isNotEmpty).join(' · ');
+    return Card(
           elevation: 0,
           color: HsColors.card,
           margin: const EdgeInsets.only(top: 6),
@@ -470,7 +502,7 @@ class _AttachmentsSectionState extends State<AttachmentsSection> {
                               : Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_fill, size: 34, color: HsColors.navy),
                         ),
                         title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text([if (a.by != null) a.by!, if (a.at != null) fmtDayTime(a.at)].join(' · ')),
+                        subtitle: Text(sub([if (a.by != null) a.by!, if (a.at != null) fmtDayTime(a.at)])),
                         onLongPress: a.byUser == me ? () => _delete(a) : null,
                       ),
                       if (_player.currentId == a.id && !loading)
@@ -497,16 +529,10 @@ class _AttachmentsSectionState extends State<AttachmentsSection> {
                       ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
                       : Icon(_icon(a.kind), color: HsColors.navy),
                   title: Text(a.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  subtitle: Text([fileSize(a.size), if (a.by != null) a.by!, if (a.at != null) fmtDayTime(a.at)].where((x) => x.isNotEmpty).join(' · ')),
+                  subtitle: Text(sub([fileSize(a.size), if (a.by != null) a.by!, if (a.at != null) fmtDayTime(a.at)])),
                   onTap: _opening == null ? () => _open(a) : null,
                   onLongPress: a.byUser == me ? () => _delete(a) : null,
                 ),
-        ),
-      if (items != null && items.any((a) => a.byUser == me))
-        const Padding(
-          padding: EdgeInsets.only(top: 4),
-          child: Text('Press and hold your own file to remove it.', style: TextStyle(color: HsColors.textSecondary, fontSize: 11.5)),
-        ),
-    ]);
+        );
   }
 }

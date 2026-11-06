@@ -629,8 +629,21 @@ class Repository {
     final path = '${Directory.systemTemp.path}/hm-att-${a.id}.${a.ext.replaceAll(RegExp(r'[^a-z0-9]'), '')}';
     final f = File(path);
     if (await f.exists() && await f.length() > 0) return path;
-    await api.downloadTo('attachments.file', {'file_id': a.id}, path, what: 'file');
+    await api.downloadTo(
+        'attachments.file',
+        {'file_id': a.id, if (a.viaDoctype != null) 'party_doctype': a.viaDoctype, if (a.viaName != null) 'party_name': a.viaName},
+        path,
+        what: 'file');
     return path;
+  }
+
+  /// Every voice note / file about a customer, section by section (Customer, Meetings, ...).
+  Future<List<(String, List<Attachment>)>> customerFiles(String doctype, String name) async {
+    final d = Map<String, dynamic>.from(await api.get('attachments.customer_files', {'doctype': doctype, 'name': name}) as Map);
+    return [
+      for (final s in (d['sections'] as List? ?? const []).cast<Map>())
+        (s['title'].toString(), attachmentsFrom(s['items']).map((a) => a.via(doctype, name)).toList()),
+    ];
   }
 
   // ------------------------------------------------------------ app suggestions

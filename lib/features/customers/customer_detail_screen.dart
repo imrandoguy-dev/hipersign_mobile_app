@@ -339,7 +339,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                 ],
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: AttachmentsSection(key: ValueKey('files-${p.doctype}-${p.id}'), doctype: p.doctype, name: p.id, title: 'Voice notes & files'),
+                  child: AttachmentsSection(key: ValueKey('files-${p.doctype}-${p.id}'), doctype: p.doctype, name: p.id, title: 'Voice notes & files', wholeCustomer: true),
                 ),
                 ..._notesSection(p),
                 if (_next != null) ...[

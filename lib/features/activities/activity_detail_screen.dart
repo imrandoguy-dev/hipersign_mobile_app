@@ -9,6 +9,7 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
 import '../../core/repository.dart';
 import '../../shared/models/models.dart';
+import '../../shared/widgets/attachments.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../customers/customer_detail_screen.dart';
@@ -262,6 +263,10 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
                 _header(a),
                 if (a.party != null) _partyCard(a),
                 _detailsCard(a),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                  child: AttachmentsSection(key: ValueKey('files-${a.id}'), doctype: 'CRM Task', name: a.id, title: 'Voice notes & files'),
+                ),
                 if (a.history.isNotEmpty) _historyCard(a),
               ]),
             ),
