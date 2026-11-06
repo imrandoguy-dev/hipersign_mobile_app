@@ -29,6 +29,57 @@ class _ActivityListScreenState extends State<ActivityListScreen> with SingleTick
   ];
   late final TabController _tabController = TabController(length: _tabs.length, vsync: this);
 
+  /// Managers: whose list. null = mine, 'all' = everyone, or one person.
+  String? _person;
+  String _personName = 'Mine';
+  bool _team = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _team = context.read<SessionController>().profile?.can('team_view') ?? false;
+    if (_team) {
+      _person = 'all';
+      _personName = 'Everyone';
+    }
+  }
+
+  Future<void> _pickPerson() async {
+    final repo = context.read<SessionController>().repo;
+    List<MeetingPerson> people;
+    try {
+      people = await repo.meetingPeople();
+    } on ApiException catch (e) {
+      showSnack(e.message, error: true);
+      return;
+    }
+    if (!mounted) return;
+    final me = context.read<SessionController>().profile?.user;
+    final picked = await showModalBottomSheet<(String?, String)>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+          child: ListView(shrinkWrap: true, children: [
+            ListTile(leading: const Icon(Icons.groups_2_outlined), title: const Text('Everyone'), onTap: () => Navigator.pop(ctx, ('all', 'Everyone'))),
+            ListTile(leading: const Icon(Icons.person), title: const Text('Mine'), onTap: () => Navigator.pop(ctx, (null, 'Mine'))),
+            const Divider(),
+            for (final p in people.where((p) => p.id != me))
+              ListTile(leading: const Icon(Icons.person_outline), title: Text(p.name), onTap: () => Navigator.pop(ctx, (p.id, p.name))),
+          ]),
+        ),
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _person = picked.$1;
+        _personName = picked.$2;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -41,6 +92,20 @@ class _ActivityListScreenState extends State<ActivityListScreen> with SingleTick
     return Scaffold(
       appBar: AppBar(
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        actions: [
+          if (_team)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ActionChip(
+                avatar: const Icon(Icons.filter_list, size: 18),
+                label: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 120),
+                  child: Text(_personName, overflow: TextOverflow.ellipsis),
+                ),
+                onPressed: _pickPerson,
+              ),
+            ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: HsColors.accent,
@@ -69,7 +134,8 @@ class _ActivityListScreenState extends State<ActivityListScreen> with SingleTick
       body: TabBarView(
         controller: _tabController,
         children: [
-          for (final t in _tabs) _ActivityTab(meetings: widget.meetings, status: t.$1, state: t.$2),
+          for (final t in _tabs)
+            _ActivityTab(key: ValueKey('${t.$1}-$_person'), meetings: widget.meetings, status: t.$1, state: t.$2, person: _person),
         ],
       ),
     );
@@ -77,9 +143,10 @@ class _ActivityListScreenState extends State<ActivityListScreen> with SingleTick
 }
 
 class _ActivityTab extends StatefulWidget {
-  const _ActivityTab({required this.meetings, required this.status, required this.state});
+  const _ActivityTab({super.key, required this.meetings, required this.status, required this.state, this.person});
 
   final bool meetings;
+  final String? person;
   final String status;
   final ActivityState state;
 
@@ -114,8 +181,8 @@ class _ActivityTabState extends State<_ActivityTab> with AutomaticKeepAliveClien
   Future<void> _load() async {
     if (!mounted) return;
     final repo = context.read<SessionController>().repo;
-    final cached = repo.cachedActivities(meetings: widget.meetings, status: widget.status);
-    final entry = repo.cached('${widget.meetings ? 'meet' : 'fu'}:${widget.status}');
+    final cached = repo.cachedActivities(meetings: widget.meetings, status: widget.status, person: widget.person);
+    final entry = repo.cached('${widget.meetings ? 'meet' : 'fu'}:${widget.status}${widget.person == null ? '' : ':${widget.person}'}');
     setState(() {
       if (cached != null && _items.isEmpty) {
         _items = cached.items;
@@ -125,7 +192,7 @@ class _ActivityTabState extends State<_ActivityTab> with AutomaticKeepAliveClien
       _loading = true;
     });
     try {
-      final page = await repo.activities(meetings: widget.meetings, status: widget.status);
+      final page = await repo.activities(meetings: widget.meetings, status: widget.status, person: widget.person);
       if (!mounted) return;
       setState(() {
         _items = page.items;
@@ -147,7 +214,7 @@ class _ActivityTabState extends State<_ActivityTab> with AutomaticKeepAliveClien
       final page = await context
           .read<SessionController>()
           .repo
-          .activities(meetings: widget.meetings, status: widget.status, cursor: _next);
+          .activities(meetings: widget.meetings, status: widget.status, cursor: _next, person: widget.person);
       if (!mounted) return;
       setState(() {
         _items = [..._items, ...page.items];
@@ -188,6 +255,7 @@ class _ActivityTabState extends State<_ActivityTab> with AutomaticKeepAliveClien
                 activity: a,
                 // Tab colour wins here: pending = yellow-orange, completed = green, rescheduled = violet.
                 stateOverride: widget.state,
+                showPeople: widget.person != null,
                 onTap: () async {
                   await Navigator.push(context, MaterialPageRoute(builder: (_) => ActivityDetailScreen(activityId: a.id)));
                   _load();

@@ -104,17 +104,17 @@ class Repository {
     );
   }
 
-  Future<PageResult<Activity>> activities({required bool meetings, required String status, String? cursor}) async {
+  /// person: null = mine; managers: 'all' (everyone) or a user id.
+  Future<PageResult<Activity>> activities({required bool meetings, required String status, String? cursor, String? person}) async {
     final method = meetings ? 'activities.get_meetings' : 'activities.get_followups';
-    final key = '${meetings ? 'meet' : 'fu'}:$status';
-    final data = cursor == null
-        ? await fetch(key, method, {'status': status, 'page_size': 30})
-        : await api.get(method, {'status': status, 'cursor': cursor, 'page_size': 30});
+    final key = '${meetings ? 'meet' : 'fu'}:$status${person == null ? '' : ':$person'}';
+    final args = {'status': status, 'page_size': 30, if (person != null) 'person': person};
+    final data = cursor == null ? await fetch(key, method, args) : await api.get(method, {...args, 'cursor': cursor});
     return _activityPage(data);
   }
 
-  PageResult<Activity>? cachedActivities({required bool meetings, required String status}) {
-    final c = cached('${meetings ? 'meet' : 'fu'}:$status');
+  PageResult<Activity>? cachedActivities({required bool meetings, required String status, String? person}) {
+    final c = cached('${meetings ? 'meet' : 'fu'}:$status${person == null ? '' : ':$person'}');
     return c == null ? null : _activityPage(c.data);
   }
 

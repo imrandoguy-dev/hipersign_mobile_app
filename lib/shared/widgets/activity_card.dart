@@ -8,12 +8,13 @@ import 'contact_actions.dart';
 /// Pastel card coloured by state: light blue = scheduled, yellow-orange = pending,
 /// green = completed, violet = rescheduled. The status label is always shown too.
 class ActivityCard extends StatelessWidget {
-  const ActivityCard({super.key, required this.activity, required this.onTap, this.stateOverride, this.onContact});
+  const ActivityCard({super.key, required this.activity, required this.onTap, this.stateOverride, this.onContact, this.showPeople = false});
 
   final Activity activity;
   final VoidCallback onTap;
   final ActivityState? stateOverride;
   final void Function(String channel)? onContact;
+  final bool showPeople; // whose it is (team lists)
 
   IconData get _typeIcon => switch (activity.activityType) {
         'Meeting' => Icons.groups_2_outlined,
@@ -67,6 +68,17 @@ class ActivityCard extends StatelessWidget {
                       if (a.party != null) ...[
                         const SizedBox(height: 2),
                         Text(a.party!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                      ],
+                      if (showPeople && a.people.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(children: [
+                          const Icon(Icons.person_outline, size: 14, color: HsColors.onPastel),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(a.people.map((p) => p.name).join(', '),
+                                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                          ),
+                        ]),
                       ],
                       const SizedBox(height: 6),
                       Row(children: [
