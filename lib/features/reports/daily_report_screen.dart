@@ -10,6 +10,7 @@ import '../../shared/widgets/common.dart';
 import '../activities/activity_detail_screen.dart';
 import '../calls/calls_screen.dart';
 import '../development/development_screen.dart';
+import 'day_timeline.dart';
 
 String _dayLabel(DateTime d) {
   final n = DateTime.now();
@@ -145,6 +146,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                   label: Text('Call back ${r.newNotReached} new lead${r.newNotReached == 1 ? '' : 's'} not reached'),
                 ),
               ),
+            if (r.timeline != null) DayTimelineCard(key: ValueKey('tl-${r.user}-${r.date}'), t: r.timeline!),
             if (r.items.isEmpty)
               const EmptyState(icon: Icons.event_available, title: 'Nothing was due', message: 'No follow-ups, meetings, trainings or tasks for this day.'),
             if (notDone.isNotEmpty) ...[
@@ -275,13 +277,23 @@ class _TeamReportScreenState extends State<TeamReportScreen> {
               margin: const EdgeInsets.only(top: 6),
               child: ListTile(
                 title: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: Text([
-                  '${r.done} done',
-                  '${r.notDone} not done',
-                  if (r.callsMade > 0 || r.callTarget != null) '${r.callsMade}${r.callTarget != null ? '/${r.callTarget}' : ''} calls (${r.newConnected} new connected)',
-                  if (r.newNotReached > 0) '${r.newNotReached} new not reached',
-                  if (r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0) '${r.meetingsAssigned}${(r.meetingTarget ?? 0) > 0 ? '/${r.meetingTarget}' : ''} meetings',
-                ].join(' · ')),
+                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text([
+                    '${r.done} done',
+                    '${r.notDone} not done',
+                    if (r.callsMade > 0 || r.callTarget != null) '${r.callsMade}${r.callTarget != null ? '/${r.callTarget}' : ''} calls (${r.newConnected} new connected)',
+                    if (r.newNotReached > 0) '${r.newNotReached} new not reached',
+                    if (r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0) '${r.meetingsAssigned}${(r.meetingTarget ?? 0) > 0 ? '/${r.meetingTarget}' : ''} meetings',
+                  ].join(' · ')),
+                  if (r.timeline != null) ...[
+                    const SizedBox(height: 6),
+                    DayTimelineBar(t: r.timeline!, height: 16, showHours: false),
+                    const SizedBox(height: 3),
+                    Text('Busy ${hm(r.timeline!.busyMinutes)} · Free ${hm(r.timeline!.freeMinutes)}'
+                        '${r.timeline!.longestFree > 0 ? ' · longest free ${hm(r.timeline!.longestFree)}' : ''}',
+                        style: const TextStyle(fontSize: 12)),
+                  ],
+                ]),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DailyReportScreen(user: r.user, name: r.name, day: _day))),
               ),

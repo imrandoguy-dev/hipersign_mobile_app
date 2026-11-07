@@ -301,12 +301,14 @@ class DailyReport {
     this.meetingsAssigned = 0,
     this.meetingTarget,
     this.newNotReached = 0,
+    this.timeline,
   });
 
   final String user;
   final String name;
   final DateTime date;
   final List<ReportItem> items;
+  final DayTimeline? timeline;
   final int done;
   final int notDone;
   final int callsMade;
@@ -331,5 +333,95 @@ class DailyReport {
         meetingsAssigned: _int(j['meetings_assigned']),
         newNotReached: _int(j['new_not_reached']),
         meetingTarget: (j['meeting_target'] as num?)?.toInt(),
+        timeline: j['timeline'] is Map ? DayTimeline.fromJson(Map<String, dynamic>.from(j['timeline'] as Map)) : null,
       );
+}
+
+/// A span on the day line (minutes from midnight).
+class TimeSpan {
+  TimeSpan(this.from, this.to, {this.kind = '', this.label = '', this.fromText = '', this.toText = '', this.done = false});
+  final int from;
+  final int to;
+  final String kind; // meeting | followup | trial
+  final String label;
+  final String fromText;
+  final String toText;
+  final bool done;
+  int get minutes => to - from;
+}
+
+class TimelineCall {
+  TimelineCall(this.at, this.atText, this.connected, this.seconds, this.incoming, this.who);
+  final int at;
+  final String atText;
+  final bool connected;
+  final int seconds;
+  final bool incoming;
+  final String who;
+}
+
+/// The day as a line: work hours, what filled them, and the free gaps.
+class DayTimeline {
+  DayTimeline({
+    required this.start,
+    required this.end,
+    required this.workStart,
+    required this.workEnd,
+    required this.until,
+    this.blocks = const [],
+    this.calls = const [],
+    this.marks = const [],
+    this.free = const [],
+    this.busyMinutes = 0,
+    this.freeMinutes = 0,
+    this.longestFree = 0,
+    this.minGap = 20,
+  });
+
+  final int start;
+  final int end;
+  final int workStart;
+  final int workEnd;
+  final int until; // nothing after this yet (today)
+  final List<TimeSpan> blocks;
+  final List<TimelineCall> calls;
+  final List<(int, String, String)> marks; // (minute, time, what)
+  final List<TimeSpan> free;
+  final int busyMinutes;
+  final int freeMinutes;
+  final int longestFree;
+  final int minGap;
+
+  bool get empty => blocks.isEmpty && calls.isEmpty && marks.isEmpty;
+
+  factory DayTimeline.fromJson(Map<String, dynamic> j) {
+    List<Map<String, dynamic>> l(String k) => ((j[k] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return DayTimeline(
+      start: _int(j['start_min']),
+      end: _int(j['end_min']),
+      workStart: _int(j['work_start_min']),
+      workEnd: _int(j['work_end_min']),
+      until: _int(j['until_min']),
+      blocks: [
+        for (final b in l('blocks'))
+          TimeSpan(_int(b['from_min']), _int(b['to_min']),
+              kind: b['kind']?.toString() ?? '', label: b['label']?.toString() ?? '', fromText: b['from']?.toString() ?? '',
+              toText: b['to']?.toString() ?? '', done: b['done'] == true),
+      ],
+      calls: [
+        for (final c in l('calls'))
+          TimelineCall(_int(c['at_min']), c['at']?.toString() ?? '', c['connected'] == true, _int(c['seconds']), c['incoming'] == true,
+              c['who']?.toString() ?? ''),
+      ],
+      marks: [for (final m in l('marks')) (_int(m['at_min']), m['at']?.toString() ?? '', m['label']?.toString() ?? '')],
+      free: [
+        for (final f in l('free'))
+          TimeSpan(_int(f['from_min']), _int(f['to_min']), fromText: f['from']?.toString() ?? '', toText: f['to']?.toString() ?? ''),
+      ],
+      busyMinutes: _int(j['busy_minutes']),
+      freeMinutes: _int(j['free_minutes']),
+      longestFree: _int(j['longest_free']),
+      minGap: _int(j['min_gap']),
+    );
+  }
 }
