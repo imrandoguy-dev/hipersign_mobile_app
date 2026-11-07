@@ -146,6 +146,13 @@ class _DayTimelineCardState extends State<DayTimelineCard> {
             const Expanded(child: Text('Day timeline', style: TextStyle(fontWeight: FontWeight.w700))),
             Text('Busy ${hm(t.busyMinutes)} · Free ${hm(t.freeMinutes)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
           ]),
+          const SizedBox(height: 4),
+          Text(
+            t.fromCheckIn
+                ? 'Checked in ${t.checkIn}${t.checkOut != null ? ' · out ${t.checkOut}' : ''} · at work ${hm(t.atWorkMinutes)}'
+                : 'No check-in · using work hours (${hm(t.atWorkMinutes)})',
+            style: TextStyle(fontSize: 12.5, color: t.fromCheckIn ? HsColors.navy : HsColors.textSecondary, fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 8),
           DayTimelineBar(t: t),
           const SizedBox(height: 6),
@@ -163,10 +170,11 @@ class _DayTimelineCardState extends State<DayTimelineCard> {
               padding: const EdgeInsets.only(top: 6),
               child: Text(
                 [
-                  if (t.calls.isNotEmpty) '${t.calls.length} calls ($connected connected) · first ${t.calls.first.atText}, last ${t.calls.last.atText}',
+                  if (t.callsSummary != null) t.callsSummary!
+                  else if (t.calls.isNotEmpty) '${t.calls.length} calls ($connected connected)',
                   if (t.longestFree > 0) 'Longest free time: ${hm(t.longestFree)}',
                 ].join('\n'),
-                style: const TextStyle(color: HsColors.textSecondary, fontSize: 12.5),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
           if (rows.isNotEmpty)

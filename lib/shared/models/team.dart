@@ -376,7 +376,19 @@ class DayTimeline {
     this.freeMinutes = 0,
     this.longestFree = 0,
     this.minGap = 20,
+    this.source = 'work hours',
+    this.checkIn,
+    this.checkOut,
+    this.atWorkMinutes = 0,
+    this.callsSummary,
   });
+
+  final String source; // check-in | work hours
+  final String? checkIn;
+  final String? checkOut;
+  final int atWorkMinutes;
+  final String? callsSummary; // "42 calls, 30 connected in 7h 50m (calling 9:55 AM - 5:40 PM)"
+  bool get fromCheckIn => source == 'check-in';
 
   final int start;
   final int end;
@@ -422,6 +434,11 @@ class DayTimeline {
       freeMinutes: _int(j['free_minutes']),
       longestFree: _int(j['longest_free']),
       minGap: _int(j['min_gap']),
+      source: j['source']?.toString() ?? 'work hours',
+      checkIn: str(j['check_in']),
+      checkOut: str(j['check_out']),
+      atWorkMinutes: _int(j['at_work_minutes']),
+      callsSummary: str(j['calls_summary']),
     );
   }
 }

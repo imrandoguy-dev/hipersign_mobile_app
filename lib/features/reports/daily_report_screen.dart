@@ -289,9 +289,15 @@ class _TeamReportScreenState extends State<TeamReportScreen> {
                     const SizedBox(height: 6),
                     DayTimelineBar(t: r.timeline!, height: 16, showHours: false),
                     const SizedBox(height: 3),
-                    Text('Busy ${hm(r.timeline!.busyMinutes)} · Free ${hm(r.timeline!.freeMinutes)}'
-                        '${r.timeline!.longestFree > 0 ? ' · longest free ${hm(r.timeline!.longestFree)}' : ''}',
+                    Text(
+                        [
+                          if (r.timeline!.fromCheckIn) 'In ${r.timeline!.checkIn}${r.timeline!.checkOut != null ? '-${r.timeline!.checkOut}' : ''}',
+                          'Busy ${hm(r.timeline!.busyMinutes)} · Free ${hm(r.timeline!.freeMinutes)}',
+                          if (r.timeline!.longestFree > 0) 'longest free ${hm(r.timeline!.longestFree)}',
+                        ].join(' · '),
                         style: const TextStyle(fontSize: 12)),
+                    if (r.timeline!.callsSummary != null)
+                      Text(r.timeline!.callsSummary!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                   ],
                 ]),
                 trailing: const Icon(Icons.chevron_right),
