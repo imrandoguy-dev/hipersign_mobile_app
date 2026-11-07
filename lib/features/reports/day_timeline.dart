@@ -15,6 +15,7 @@ const _trial = Color(0xFF9B59B6);
 const _connected = Color(0xFF2E9E5B);
 const _missed = Color(0xFF9AA3AE);
 const _freeColor = Color(0xFFFFD9D6);
+const _lunchColor = Color(0xFFC9D3DE);
 
 Color _blockColor(String kind) => switch (kind) {
       'meeting' => _meeting,
@@ -58,6 +59,10 @@ class _BarPainter extends CustomPainter {
     // Not happened yet (today).
     if (t.until < t.end) {
       canvas.drawRect(Rect.fromLTRB(x(t.until), 0, size.width, size.height), Paint()..color = Colors.white.withValues(alpha: 0.55));
+    }
+    final l = t.lunch;
+    if (l != null && l.to > t.start && l.from < t.end) {
+      canvas.drawRect(Rect.fromLTRB(x(l.from), 0, x(l.to), size.height), Paint()..color = _lunchColor);
     }
     for (final f in t.free) {
       canvas.drawRect(Rect.fromLTRB(x(f.from), 0, x(f.to), size.height), Paint()..color = _freeColor);
@@ -158,6 +163,7 @@ class _DayTimelineCardState extends State<DayTimelineCard> {
           const SizedBox(height: 6),
           Wrap(spacing: 10, runSpacing: 4, children: [
             _legend(_freeColor, 'Free'),
+            if (t.lunch != null) _legend(_lunchColor, 'Lunch ${t.lunch!.fromText}-${t.lunch!.toText}'),
             if (t.blocks.any((b) => b.kind == 'meeting')) _legend(_meeting, 'Meeting'),
             if (t.blocks.any((b) => b.kind == 'followup')) _legend(_followup, 'Follow-up'),
             if (t.blocks.any((b) => b.kind == 'trial')) _legend(_trial, 'Training'),

@@ -12,6 +12,13 @@ import '../calls/calls_screen.dart';
 import '../development/development_screen.dart';
 import 'day_timeline.dart';
 
+/// "new connected calls" -> "New connected"
+String _unitLabel(String unit) {
+  final u = unit.replaceAll(RegExp(r'\s*calls$'), '');
+  if (u.isEmpty) return 'Calls';
+  return u[0].toUpperCase() + u.substring(1);
+}
+
 String _dayLabel(DateTime d) {
   final n = DateTime.now();
   final today = DateTime(n.year, n.month, n.day);
@@ -118,9 +125,9 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
               _Stat(label: 'Not done', value: '${r.notDone}', color: r.notDone > 0 ? HsColors.overdue : HsColors.card),
               const SizedBox(width: 8),
               _Stat(
-                label: r.callTarget != null ? 'Calls / target' : 'Calls',
-                value: r.callTarget != null ? '${r.callsMade}/${r.callTarget}' : '${r.callsMade}',
-                color: HsColors.active,
+                label: r.callTarget != null ? '${_unitLabel(r.callUnit)} / target' : 'Calls',
+                value: r.callTarget != null ? '${r.towardsTarget}/${r.callTarget}' : '${r.callsMade}',
+                color: r.callTarget != null && r.towardsTarget >= r.callTarget! ? HsColors.completed : HsColors.active,
               ),
             ]),
             if (r.callsMade > 0 || r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0)
@@ -281,7 +288,8 @@ class _TeamReportScreenState extends State<TeamReportScreen> {
                   Text([
                     '${r.done} done',
                     '${r.notDone} not done',
-                    if (r.callsMade > 0 || r.callTarget != null) '${r.callsMade}${r.callTarget != null ? '/${r.callTarget}' : ''} calls (${r.newConnected} new connected)',
+                    if (r.callTarget != null) '${r.towardsTarget}/${r.callTarget} ${r.callUnit} (${r.callsMade} calls made)'
+                    else if (r.callsMade > 0) '${r.callsMade} calls (${r.newConnected} new connected)',
                     if (r.newNotReached > 0) '${r.newNotReached} new not reached',
                     if (r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0) '${r.meetingsAssigned}${(r.meetingTarget ?? 0) > 0 ? '/${r.meetingTarget}' : ''} meetings',
                   ].join(' · ')),

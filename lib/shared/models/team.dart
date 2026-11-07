@@ -302,7 +302,14 @@ class DailyReport {
     this.meetingTarget,
     this.newNotReached = 0,
     this.timeline,
+    this.callCounted,
+    this.callUnit = 'calls',
   });
+
+  /// Calls that count towards the target, the way it is set in ERP (e.g. only new connected).
+  final int? callCounted;
+  final String callUnit;
+  int get towardsTarget => callCounted ?? callsMade;
 
   final String user;
   final String name;
@@ -333,6 +340,8 @@ class DailyReport {
         meetingsAssigned: _int(j['meetings_assigned']),
         newNotReached: _int(j['new_not_reached']),
         meetingTarget: (j['meeting_target'] as num?)?.toInt(),
+        callCounted: (j['call_counted'] as num?)?.toInt(),
+        callUnit: j['call_unit']?.toString() ?? 'calls',
         timeline: j['timeline'] is Map ? DayTimeline.fromJson(Map<String, dynamic>.from(j['timeline'] as Map)) : null,
       );
 }
@@ -381,7 +390,10 @@ class DayTimeline {
     this.checkOut,
     this.atWorkMinutes = 0,
     this.callsSummary,
+    this.lunch,
   });
+
+  final TimeSpan? lunch;
 
   final String source; // check-in | work hours
   final String? checkIn;
@@ -439,6 +451,10 @@ class DayTimeline {
       checkOut: str(j['check_out']),
       atWorkMinutes: _int(j['at_work_minutes']),
       callsSummary: str(j['calls_summary']),
+      lunch: j['lunch'] is Map
+          ? TimeSpan(_int(j['lunch']['from_min']), _int(j['lunch']['to_min']),
+              fromText: j['lunch']['from']?.toString() ?? '', toText: j['lunch']['to']?.toString() ?? '')
+          : null,
     );
   }
 }
