@@ -507,19 +507,8 @@ class _AttachmentsSectionState extends State<AttachmentsSection> {
                       ),
                       if (_player.currentId == a.id && !loading)
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                          child: StreamBuilder<Duration>(
-                            stream: _player.position,
-                            builder: (context, snap) {
-                              final total = _player.duration.inMilliseconds;
-                              final pos = (snap.data ?? Duration.zero).inMilliseconds;
-                              return Row(children: [
-                                Expanded(child: LinearProgressIndicator(value: total <= 0 ? 0 : (pos / total).clamp(0, 1).toDouble())),
-                                const SizedBox(width: 8),
-                                Text('${fmtDuration(pos ~/ 1000)} / ${fmtDuration(total ~/ 1000)}', style: const TextStyle(fontSize: 12)),
-                              ]);
-                            },
-                          ),
+                          padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+                          child: AudioSeekBar(player: _player),
                         ),
                     ]);
                   },

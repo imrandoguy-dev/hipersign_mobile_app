@@ -59,6 +59,17 @@ class RecordingPlayer extends ChangeNotifier {
 
   Future<void> seek(Duration d) => _player.seek(d);
 
+  /// Jump back / forward (e.g. -10 s to hear something again).
+  Future<void> skip(Duration by) async {
+    final total = duration;
+    var to = _player.position + by;
+    if (to < Duration.zero) to = Duration.zero;
+    if (total > Duration.zero && to > total) to = total;
+    await _player.seek(to);
+    if (!_player.playing) unawaited(_player.play());
+    notifyListeners();
+  }
+
   Future<void> stop() async {
     await _player.stop();
     currentId = null;
@@ -143,7 +154,7 @@ class RecordingRow extends StatelessWidget {
                     ),
                     if (trailing != null) trailing!,
                   ]),
-                  if (current && !loading) _SeekBar(player: player),
+                  if (current && !loading) AudioSeekBar(player: player),
                 ]),
               ),
             ),
@@ -193,9 +204,19 @@ class _PlayButton extends StatelessWidget {
   }
 }
 
-class _SeekBar extends StatelessWidget {
-  const _SeekBar({required this.player});
+/// Drag to any point, or jump 10 seconds back / forward.
+class AudioSeekBar extends StatelessWidget {
+  const AudioSeekBar({super.key, required this.player});
   final RecordingPlayer player;
+
+  Widget _skip(IconData icon, String tip, int seconds) => IconButton(
+        tooltip: tip,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        icon: Icon(icon, size: 24, color: HsColors.navy),
+        onPressed: () => player.skip(Duration(seconds: seconds)),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -208,6 +229,7 @@ class _SeekBar extends StatelessWidget {
         return Padding(
           padding: const EdgeInsets.only(top: 6),
           child: Row(children: [
+            _skip(Icons.replay_10, 'Back 10 seconds', -10),
             Text(fmtDuration(pos.inSeconds), style: const TextStyle(fontSize: 12, color: HsColors.textSecondary)),
             Expanded(
               child: SliderTheme(
@@ -226,6 +248,7 @@ class _SeekBar extends StatelessWidget {
               ),
             ),
             Text(fmtDuration(total.inSeconds), style: const TextStyle(fontSize: 12, color: HsColors.textSecondary)),
+            _skip(Icons.forward_10, 'Forward 10 seconds', 10),
           ]),
         );
       },

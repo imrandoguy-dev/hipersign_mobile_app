@@ -883,9 +883,23 @@ class _VoiceView extends StatelessWidget {
                       builder: (context, snap) {
                         final total = player.duration.inMilliseconds;
                         final pos = (snap.data ?? Duration.zero).inMilliseconds;
+                        final max = total <= 0 ? 1.0 : total.toDouble();
                         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          LinearProgressIndicator(value: total <= 0 ? 0 : (pos / total).clamp(0, 1).toDouble(), minHeight: 3),
-                          const SizedBox(height: 4),
+                          SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                            ),
+                            child: SizedBox(
+                              height: 24,
+                              child: Slider(
+                                value: pos.clamp(0, max.toInt()).toDouble(),
+                                max: max,
+                                onChanged: (v) => player.seek(Duration(milliseconds: v.round())),
+                              ),
+                            ),
+                          ),
                           Text('${fmtDuration(pos ~/ 1000)} / ${fmtDuration(total ~/ 1000)}', style: const TextStyle(fontSize: 11.5)),
                         ]);
                       },
