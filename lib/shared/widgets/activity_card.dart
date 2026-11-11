@@ -91,6 +91,28 @@ class ActivityCard extends StatelessWidget {
                           const Text('High', style: TextStyle(fontSize: 12, color: Color(0xFF8B1E1E))),
                         ],
                       ]),
+                      // What was noted when it was done (meeting notes / outcome).
+                      if ((a.completionNotes ?? '').trim().isNotEmpty || (a.outcome ?? '').trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 1),
+                            child: Icon(Icons.sticky_note_2_outlined, size: 14, color: HsColors.onPastel),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              [
+                                if ((a.outcome ?? '').trim().isNotEmpty) a.outcome!.trim(),
+                                if ((a.completionNotes ?? '').trim().isNotEmpty) a.completionNotes!.trim(),
+                              ].join(' · '),
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic),
+                            ),
+                          ),
+                        ]),
+                      ],
                     ]),
                   ),
                 ),
