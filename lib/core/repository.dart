@@ -355,6 +355,39 @@ class Repository {
     return Booking.fromJson(Map<String, dynamic>.from((data as Map)['booking'] as Map));
   }
 
+  // ------------------------------------------------------------ new numbers (Google Maps)
+
+  Future<Map<String, dynamic>> prospects({String tab = 'to_call', String? person, String? cursor}) async =>
+      Map<String, dynamic>.from(await api.get('prospects.get_list', {
+        'tab': tab,
+        if (person != null) 'person': person,
+        if (cursor != null) 'cursor': cursor,
+        'page_size': 50,
+      }) as Map);
+
+  Future<List<MeetingPerson>> prospectCallers() async {
+    final d = await api.get('prospects.callers');
+    return (((d as Map)['items'] as List?) ?? const [])
+        .map((e) => MeetingPerson((e as Map)['id'].toString(), e['name']?.toString() ?? e['id'].toString()))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> findProspects(String business, String places, int count, List<String> callers) async =>
+      Map<String, dynamic>.from(await api.post('prospects.find', {
+        'business': business,
+        'places': places,
+        'count': count,
+        'callers': jsonEncode(callers),
+      }) as Map);
+
+  Future<Party> convertProspect(String id) async {
+    final d = Map<String, dynamic>.from(await api.post('prospects.convert', {'prospect_id': id}) as Map);
+    return Party.fromJson(Map<String, dynamic>.from(d['party'] as Map));
+  }
+
+  Future<void> setProspectStatus(String id, String status, {String? notes}) =>
+      api.post('prospects.set_status', {'prospect_id': id, 'status': status, if (notes != null) 'notes': notes});
+
   /// The people (and numbers) of a customer / lead / deal.
   Future<List<ContactPerson>> partyContacts(String doctype, String name) async {
     final d = await api.get('customers.contacts', {'doctype': doctype, 'name': name});
