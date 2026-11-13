@@ -12,6 +12,7 @@ final warnings = <String>[];
 void main() {
   _androidManifest();
   _androidGradle();
+  _androidRootGradle();
   _androidMainActivity();
   _androidHomeWidget();
   _iosInfoPlist();
@@ -205,6 +206,25 @@ void _androidManifest() {
 
   s = s.replaceFirst(RegExp(r'android:label="[^"]*"'), 'android:label="Hipersign"');
   if (s != before) _write(path, s, 'AndroidManifest.xml (permissions, notification receivers, tel/https queries, label)');
+}
+
+/// Release builds run Android's "lint vital" check on every plugin; on newer build machines it
+/// crashes inside lint itself (NoSuchMethodError in JavaDocParser). It only finds problems in
+/// plugin code we don't own, so it's switched off.
+void _androidRootGradle() {
+  final kts = File('android/build.gradle.kts');
+  final groovy = File('android/build.gradle');
+  final file = kts.existsSync() ? kts : groovy;
+  if (!file.existsSync()) {
+    warnings.add('android/build.gradle(.kts) not found.');
+    return;
+  }
+  var s = file.readAsStringSync();
+  if (s.contains('lintVital')) return;
+  s += kts.existsSync()
+      ? '\nsubprojects {\n    tasks.matching { it.name.startsWith("lintVital") }.configureEach { enabled = false }\n}\n'
+      : '\nsubprojects {\n    tasks.matching { it.name.startsWith("lintVital") }.configureEach { enabled = false }\n}\n';
+  _write(file.path, s, '${file.path} (skip the crashing release lint check)');
 }
 
 void _androidGradle() {
