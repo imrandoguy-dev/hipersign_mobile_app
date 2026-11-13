@@ -10,6 +10,7 @@ import '../../shared/widgets/attachments.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
 import '../activities/activity_detail_screen.dart';
+import '../customers/customer_detail_screen.dart';
 import 'slot_picker.dart';
 import 'trial_widgets.dart';
 
@@ -51,6 +52,23 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _addNote() async {
+    final text = await _askText('Add a note', 'Note', 'Save');
+    if (text == null || text.trim().isEmpty || !mounted) return;
+    final repo = context.read<SessionController>().repo;
+    final b = await runWrite(context, () => repo.addTrialNote(_b!.id, text.trim()), success: 'Note saved');
+    if (b != null && mounted) {
+      bumpRefresh();
+      setState(() => _b = b);
+    }
+  }
+
+  void _openCustomer(Booking b) {
+    final p = b.party;
+    if (p == null) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => CustomerDetailScreen(doctype: p.doctype, name: p.id, title: p.name)));
   }
 
   Future<String?> _askText(String title, String label, String confirm) async {
@@ -300,7 +318,13 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Row(children: [StatusChip(b.state, text: b.status), const Spacer(), Text(b.bookingType)]),
                       const SizedBox(height: 12),
-                      Text(b.partyName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                      InkWell(
+                        onTap: b.party == null ? null : () => _openCustomer(b),
+                        child: Row(children: [
+                          Flexible(child: Text(b.partyName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
+                          if (b.party != null) const Icon(Icons.chevron_right, color: HsColors.onPastel),
+                        ]),
+                      ),
                       const SizedBox(height: 6),
                       Text('${fmtDayTime(b.start)} - ${fmtTime(b.end)}'),
                       Text('Trainer: ${b.trainerName ?? '-'}'),
@@ -320,8 +344,32 @@ class _TrialDetailScreenState extends State<TrialDetailScreen> {
                       ContactButtons(phone: b.party!.primaryPhone, party: b.party),
                     ]),
                   ),
+                if (b.party != null) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _openCustomer(b),
+                    icon: const Icon(Icons.person_outline),
+                    label: const Text('Open customer'),
+                  ),
+                ],
                 ..._trialSection(b),
-                if (b.notes != null) ...[const SizedBox(height: 12), Text('Notes: ${b.notes}')],
+                const SizedBox(height: 12),
+                Row(children: [
+                  const Expanded(child: Text('Notes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                  TextButton.icon(onPressed: _addNote, icon: const Icon(Icons.note_add_outlined), label: const Text('Add note')),
+                ]),
+                if ((b.notes ?? '').trim().isEmpty)
+                  const Text('No notes yet.', style: TextStyle(color: HsColors.textSecondary))
+                else
+                  for (final line in b.notes!.split('\n').where((l) => l.trim().isNotEmpty))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Padding(padding: EdgeInsets.only(top: 3), child: Icon(Icons.sticky_note_2_outlined, size: 15)),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(line)),
+                      ]),
+                    ),
                 if (b.cancellationReason != null) ...[const SizedBox(height: 8), Text('Cancelled: ${b.cancellationReason}')],
                 if (b.completionNotes != null) ...[const SizedBox(height: 8), Text('Result: ${b.completionNotes}')],
                 const SizedBox(height: 16),

@@ -143,6 +143,7 @@ class Activity {
     this.history = const [],
     this.reminderOffsets,
     this.people = const [],
+    this.contact,
   });
 
   final String id;
@@ -166,6 +167,10 @@ class Activity {
   final List<HistoryEntry> history;
   final List<int>? reminderOffsets; // own reminders (minutes before); null = my reminder setting
   final List<MeetingPerson> people; // everyone in this meeting (each has their own copy)
+  final ContactPerson? contact; // which person of the customer it is with
+
+  /// The number to call / WhatsApp: the chosen contact person's, else the customer's.
+  PhoneInfo? get callPhone => contact?.phone ?? party?.primaryPhone;
 
   bool get isOpen => status == 'Pending' || status == 'In Progress' || status == 'Rescheduled';
 
@@ -203,6 +208,26 @@ class Activity {
                 ))
             .where((p) => p.id.isNotEmpty)
             .toList(),
+        contact: j['contact'] is Map ? ContactPerson.fromJson(Map<String, dynamic>.from(j['contact'] as Map)) : null,
+      );
+}
+
+/// A person (and number) at a customer's company.
+class ContactPerson {
+  const ContactPerson({this.id, required this.name, this.designation, this.email, this.phone});
+
+  final String? id; // null = the person saved on the lead / deal itself
+  final String name;
+  final String? designation;
+  final String? email;
+  final PhoneInfo? phone;
+
+  factory ContactPerson.fromJson(Map<String, dynamic> j) => ContactPerson(
+        id: str(j['id']),
+        name: j['name']?.toString() ?? '',
+        designation: str(j['designation']),
+        email: str(j['email']),
+        phone: j['phone'] is Map ? PhoneInfo.fromJson(Map<String, dynamic>.from(j['phone'] as Map)) : null,
       );
 }
 

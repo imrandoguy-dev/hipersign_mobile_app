@@ -69,6 +69,17 @@ class ActivityCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(a.party!.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
                       ],
+                      if (a.contact != null) ...[
+                        const SizedBox(height: 4),
+                        Row(children: [
+                          const Icon(Icons.contact_phone_outlined, size: 14, color: HsColors.onPastel),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text('With ${a.contact!.name}${a.contact!.designation != null ? ' (${a.contact!.designation})' : ''}',
+                                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
+                          ),
+                        ]),
+                      ],
                       if (showPeople && a.people.isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Row(children: [
@@ -119,7 +130,7 @@ class ActivityCard extends StatelessWidget {
                 if (a.party != null) ...[
                   const SizedBox(width: 10),
                   ContactButtons(
-                    phone: a.party!.primaryPhone,
+                    phone: a.callPhone,
                     party: a.party,
                     activityId: a.id,
                     dark: true,

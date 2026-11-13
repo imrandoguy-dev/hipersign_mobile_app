@@ -340,6 +340,29 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
             const Icon(Icons.chevron_right, color: HsColors.textSecondary),
           ]),
         ),
+        if (a.contact != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Row(children: [
+              const Icon(Icons.contact_phone_outlined, color: HsColors.navy),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('With ${a.contact!.name}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                  Text([if (a.contact!.designation != null) a.contact!.designation!, if (a.contact!.phone != null) a.contact!.phone!.e164 ?? a.contact!.phone!.raw].join(' · '),
+                      style: const TextStyle(fontSize: 12, color: HsColors.textSecondary)),
+                ]),
+              ),
+              if (a.contact!.phone != null)
+                ContactButtons(
+                  phone: a.contact!.phone,
+                  party: a.party,
+                  activityId: a.id,
+                  onCall: () => repo.logContact(a.id, 'Call').catchError((_) {}),
+                  onWhatsApp: () => repo.logContact(a.id, 'WhatsApp').catchError((_) {}),
+                ),
+            ]),
+          ),
         if (p.phones.isEmpty)
           const Padding(
             padding: EdgeInsets.only(top: 12),

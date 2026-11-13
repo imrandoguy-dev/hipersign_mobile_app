@@ -355,6 +355,32 @@ class Repository {
     return Booking.fromJson(Map<String, dynamic>.from((data as Map)['booking'] as Map));
   }
 
+  /// The people (and numbers) of a customer / lead / deal.
+  Future<List<ContactPerson>> partyContacts(String doctype, String name) async {
+    final d = await api.get('customers.contacts', {'doctype': doctype, 'name': name});
+    return (((d as Map)['items'] as List?) ?? const [])
+        .map((e) => ContactPerson.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<ContactPerson> addContactPerson(String doctype, String name,
+      {required String fullName, String? phone, String? designation, String? email}) async {
+    final d = await api.post('customers.add_contact', {
+      'doctype': doctype,
+      'name': name,
+      'full_name': fullName,
+      'phone': phone,
+      'designation': designation,
+      'email': email,
+    });
+    return ContactPerson.fromJson(Map<String, dynamic>.from(d as Map));
+  }
+
+  Future<Booking> addTrialNote(String id, String text) async {
+    final data = await api.post('trials.add_note', {'booking_id': id, 'text': text});
+    return Booking.fromJson(Map<String, dynamic>.from((data as Map)['booking'] as Map));
+  }
+
   Future<Booking> completeBooking(String id, String? notes) async {
     final data = await api.post('trials.complete_booking', {'booking_id': id, 'completion_notes': notes});
     return Booking.fromJson(Map<String, dynamic>.from((data as Map)['booking'] as Map));

@@ -16,6 +16,7 @@ import '../../shared/widgets/activity_card.dart';
 import '../../shared/widgets/attachments.dart';
 import '../../shared/widgets/common.dart';
 import '../../shared/widgets/contact_actions.dart';
+import '../../shared/widgets/contact_person.dart';
 import '../activities/activity_detail_screen.dart';
 import '../activities/activity_form.dart';
 import '../notes/notes.dart';
@@ -340,6 +341,11 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: AttachmentsSection(key: ValueKey('files-${p.doctype}-${p.id}'), doctype: p.doctype, name: p.id, title: 'Voice notes & files', wholeCustomer: true),
+                ),
+                ContactPersonsSection(
+                  key: ValueKey('people-${p.doctype}-${p.id}'),
+                  party: p,
+                  buttons: (phone) => ContactButtons(phone: phone, party: p),
                 ),
                 ..._notesSection(p),
                 if (_next != null) ...[

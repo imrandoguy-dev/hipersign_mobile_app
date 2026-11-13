@@ -11,6 +11,7 @@ import '../../core/notifications/reminder_planner.dart';
 import '../../core/repository.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/common.dart';
+import '../../shared/widgets/contact_person.dart';
 import '../../shared/widgets/reminder_picker.dart';
 import '../customers/party_picker.dart';
 import 'activity_detail_screen.dart';
@@ -61,6 +62,9 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
   Activity? get _existing => widget.existing;
   bool get _editing => _existing != null;
+
+  /// Which person at the customer this is with (null = the main contact).
+  late ContactPerson? _contact = widget.existing?.contact;
 
   /// Who is in the meeting. Each person gets it on their own calendar.
   List<MeetingPerson> _people = [];
@@ -168,6 +172,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         'reference_name': _party!.id,
       },
       if (_type != 'Trial' && !_samePeople(a.people)) 'people': jsonEncode(_people.map((p) => p.id).toList()),
+      if ((_contact?.id ?? '') != (a.contact?.id ?? '')) 'contact': _contact?.id ?? '',
       if (a.start == null || _start != a.start || (a.end != null && a.end!.difference(a.start!).inMinutes != minutes)) ...{
         'start': Repository.iso(_start),
         'end': Repository.iso(_start.add(Duration(minutes: minutes))),
@@ -218,6 +223,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         'idempotency_key': _idempotencyKey,
         if (_reminders != null) 'reminder_offsets': _reminders!.join(','),
         if (_type != 'Trial' && _people.isNotEmpty) 'people': jsonEncode(_people.map((p) => p.id).toList()),
+        if (_contact?.id != null) 'contact': _contact!.id,
       });
       bumpRefresh();
       if (!mounted) return;
@@ -285,7 +291,34 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
   Future<void> _pickParty() async {
     final p = await pickParty(context);
-    if (p != null) setState(() => _party = p);
+    if (p != null) {
+      setState(() {
+        if (p.id != _party?.id) _contact = null; // contacts belong to the old customer
+        _party = p;
+      });
+    }
+  }
+
+  Future<void> _pickContact() async {
+    final party = _party;
+    if (party == null) return _missingParty();
+    final c = await pickContactPerson(context, party, selectedId: _contact?.id);
+    if (c != null && mounted) setState(() => _contact = c.id == null ? null : c);
+  }
+
+  Widget _contactTile() {
+    final c = _contact;
+    return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      tileColor: Theme.of(context).colorScheme.surface,
+      leading: const Icon(Icons.contact_phone_outlined),
+      title: Text(c?.name ?? 'Contact person: main contact'),
+      subtitle: Text(c == null
+          ? 'Tap to choose another person, or add one'
+          : [if (c.designation != null) c.designation!, if (c.phone != null) c.phone!.e164 ?? c.phone!.raw].join(' · ')),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: _pickContact,
+    );
   }
 
   Future<void> _missingParty() => showMissing(
@@ -326,6 +359,10 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
           trailing: const Icon(Icons.chevron_right),
           onTap: _pickParty,
         ),
+        if (_party != null && _type != 'Trial') ...[
+          const SizedBox(height: 8),
+          _contactTile(),
+        ],
         const SizedBox(height: 12),
         TextField(controller: _title, decoration: const InputDecoration(labelText: 'Title (optional)')),
         const SizedBox(height: 12),
