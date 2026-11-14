@@ -475,6 +475,10 @@ class Repository {
     return ((data['fields'] as List?) ?? const []).map((e) => EditField.fromJson(Map<String, dynamic>.from(e as Map))).toList();
   }
 
+  /// A Google Business / Maps link -> {name, phone, address, address_parts, maps_url, place_id}.
+  Future<Map<String, dynamic>> googleLink(String url) async =>
+      Map<String, dynamic>.from(await api.post('customers.google_link', {'url': url}) as Map);
+
   Future<void> updateParty(String doctype, String name, Map<String, dynamic> values) =>
       api.post('customers.update_party', {'doctype': doctype, 'name': name, 'values': jsonEncode(values)});
 

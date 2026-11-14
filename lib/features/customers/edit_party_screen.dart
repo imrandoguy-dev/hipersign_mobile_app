@@ -111,9 +111,79 @@ class _EditPartyScreenState extends State<EditPartyScreen> {
     }
   }
 
+  bool _filling = false;
+
+  /// Google Business link -> fill the empty name / phone / address / website fields.
+  Future<void> _fillFromLink(EditField link) async {
+    final url = _text[link.key]?.text.trim() ?? '';
+    if (url.isEmpty) {
+      showSnack('Paste the Google Business link first.', error: true);
+      return;
+    }
+    setState(() => _filling = true);
+    try {
+      final g = await context.read<SessionController>().repo.googleLink(url);
+      if (!mounted) return;
+      final parts = Map<String, dynamic>.from((g['address_parts'] as Map?) ?? const {});
+      final filled = <String>[];
+      void put(List<String> keys, Object? value, String what) {
+        final v = value?.toString().trim() ?? '';
+        if (v.isEmpty) return;
+        for (final k in keys) {
+          final c = _text[k];
+          if (c != null && c.text.trim().isEmpty) {
+            c.text = v;
+            filled.add(what);
+            return;
+          }
+        }
+      }
+
+      put(['first_name', 'customer_name'], g['name'], 'name');
+      put(['organization'], g['name'], 'organization');
+      put(['mobile_no', 'contact_mobile'], g['phone'], 'phone');
+      put(['hm_address'], g['address'], 'address');
+      put(['address_line1'], parts['address_line1'], 'address');
+      put(['city'], parts['city'], 'city');
+      put(['state'], parts['state'], 'state');
+      put(['pincode'], parts['pincode'], 'PIN');
+      if ((g['maps_url'] ?? '').toString().isNotEmpty) _text[link.key]?.text = g['maps_url'].toString();
+      setState(() {});
+      showSnack(filled.isEmpty
+          ? 'Found ${g['name'] ?? 'the business'}. The fields already had values, so nothing was replaced.'
+          : 'Filled from Google: ${filled.toSet().join(', ')}. Check and tap Save.');
+    } on ApiException catch (e) {
+      showSnack(e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _filling = false);
+    }
+  }
+
   Widget _input(EditField f) {
     final label = f.required ? '${f.label} *' : f.label;
     switch (f.type) {
+      case 'google_link':
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TextField(
+            controller: _text[f.key],
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: 'Paste the Google Maps / Business link',
+              prefixIcon: const Icon(Icons.storefront_outlined),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _filling ? null : () => _fillFromLink(f),
+              icon: _filling
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.auto_fix_high, size: 18),
+              label: const Text('Fill details from link'),
+            ),
+          ),
+        ]);
       case 'select':
         final options = [...f.options];
         final v = _values[f.key];

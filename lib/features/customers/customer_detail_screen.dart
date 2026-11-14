@@ -79,6 +79,55 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     }
   }
 
+  /// Change a deal's (or lead's) status in one tap. Lost statuses ask for the reason, so
+  /// those open the full edit form.
+  Future<void> _changeStatus(Party p) async {
+    final repo = context.read<SessionController>().repo;
+    List<EditField> fields;
+    try {
+      fields = await repo.editForm(p.doctype, p.id);
+    } on ApiException catch (e) {
+      showSnack(e.message, error: true);
+      return;
+    }
+    final status = fields.where((f) => f.key == 'status').firstOrNull;
+    if (status == null || !mounted) return;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+          child: ListView(shrinkWrap: true, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('${p.kind} status', style: Theme.of(ctx).textTheme.titleMedium),
+            ),
+            for (final o in status.options)
+              ListTile(
+                leading: Icon(o == p.status ? Icons.radio_button_checked : Icons.radio_button_off, color: HsColors.navy),
+                title: Text(o),
+                onTap: () => Navigator.pop(ctx, o),
+              ),
+          ]),
+        ),
+      ),
+    );
+    if (picked == null || picked == p.status || !mounted) return;
+    final needsMore = fields.any((f) => f.showIfKey == 'status' && f.showIfValues.contains(picked));
+    if (needsMore) {
+      showSnack('Choose the reason, then Save.');
+      if (await openEditParty(context, p)) _load();
+      return;
+    }
+    final ok = await runWrite(context, () => repo.updateParty(p.doctype, p.id, {'status': picked}).then((_) => true), success: 'Status: $picked');
+    if (ok == true) {
+      bumpRefresh();
+      _load();
+    }
+  }
+
   Future<void> _convertToDeal(Party lead) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -274,6 +323,12 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           await Navigator.push(context, MaterialPageRoute(builder: (_) => QuotationForm(party: p)));
                           _load();
                         },
+                      ),
+                    if (p.doctype == 'CRM Deal' || p.doctype == 'CRM Lead')
+                      ActionChip(
+                        avatar: const Icon(Icons.flag_outlined, size: 18),
+                        label: Text('Status: ${p.status ?? '-'}'),
+                        onPressed: () => _changeStatus(p),
                       ),
                     if (p.doctype == 'CRM Lead')
                       ActionChip(
