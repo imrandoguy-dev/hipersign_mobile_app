@@ -20,6 +20,7 @@ import '../calendar/calendar_screen.dart';
 import '../calls/after_call_screen.dart';
 import '../customers/customer_detail_screen.dart';
 import '../customers/customers_screen.dart';
+import '../customers/new_party_screen.dart';
 import '../customers/party_picker.dart';
 import '../quotations/quotation_screens.dart';
 import '../customers/dialer_sheet.dart';
@@ -203,7 +204,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.85),
+          child: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           if (p.can('create_activity'))
             ListTile(
@@ -223,6 +228,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 openActivityForm(context, type: 'Meeting');
               },
             ),
+          if (p.can('customers')) ...[
+            for (final k in const [('lead', 'New lead', Icons.person_add_alt_1), ('deal', 'New deal', Icons.handshake_outlined), ('customer', 'New customer', Icons.storefront_outlined)])
+              ListTile(
+                leading: Icon(k.$3),
+                title: Text(k.$2),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => NewPartyScreen(kind: k.$1)));
+                },
+              ),
+          ],
           if (p.can('tasks'))
             ListTile(
               leading: const Icon(Icons.task_alt),
@@ -254,6 +270,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             ),
           const SizedBox(height: 8),
         ]),
+          ),
+        ),
       ),
     );
   }

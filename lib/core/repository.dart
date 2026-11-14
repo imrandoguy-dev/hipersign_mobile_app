@@ -388,6 +388,19 @@ class Repository {
   Future<void> setProspectStatus(String id, String status, {String? notes}) =>
       api.post('prospects.set_status', {'prospect_id': id, 'status': status, if (notes != null) 'notes': notes});
 
+  /// New lead / deal / customer. Returns (party, created) - created is false when the number
+  /// was already in ERP and that record came back.
+  Future<(Party, bool)> createParty(String kind, {String? company, String? person, String? phone, String? email}) async {
+    final d = Map<String, dynamic>.from(await api.post('customers.create_party', {
+      'kind': kind,
+      if ((company ?? '').isNotEmpty) 'company': company,
+      if ((person ?? '').isNotEmpty) 'person': person,
+      if ((phone ?? '').isNotEmpty) 'phone': phone,
+      if ((email ?? '').isNotEmpty) 'email': email,
+    }) as Map);
+    return (Party.fromJson(Map<String, dynamic>.from(d['party'] as Map)), d['created'] == true);
+  }
+
   /// Lead -> Deal. Returns the deal.
   Future<Party> convertToDeal(String lead) async {
     final d = Map<String, dynamic>.from(await api.post('customers.convert_to_deal', {'name': lead}) as Map);
