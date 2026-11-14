@@ -388,6 +388,12 @@ class Repository {
   Future<void> setProspectStatus(String id, String status, {String? notes}) =>
       api.post('prospects.set_status', {'prospect_id': id, 'status': status, if (notes != null) 'notes': notes});
 
+  /// Lead -> Deal. Returns the deal.
+  Future<Party> convertToDeal(String lead) async {
+    final d = Map<String, dynamic>.from(await api.post('customers.convert_to_deal', {'name': lead}) as Map);
+    return Party.fromJson(Map<String, dynamic>.from(d['party'] as Map));
+  }
+
   /// The people (and numbers) of a customer / lead / deal.
   Future<List<ContactPerson>> partyContacts(String doctype, String name) async {
     final d = await api.get('customers.contacts', {'doctype': doctype, 'name': name});

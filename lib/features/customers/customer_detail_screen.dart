@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/nav.dart';
+import '../../app/refresh.dart';
 import '../../app/theme.dart';
 import '../../core/api/api_client.dart';
 import '../../core/auth/session.dart';
@@ -76,6 +77,27 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     } else if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _convertToDeal(Party lead) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Convert to deal?'),
+        content: Text('${lead.name} becomes a deal in CRM. Its follow-ups, meetings, notes and files go with it.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Convert')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final repo = context.read<SessionController>().repo;
+    final deal = await runWrite(context, () => repo.convertToDeal(lead.id), success: 'Converted to deal');
+    if (deal == null || !mounted) return;
+    bumpRefresh();
+    Navigator.pushReplacement(
+        context, MaterialPageRoute(builder: (_) => CustomerDetailScreen(doctype: deal.doctype, name: deal.id, title: deal.name)));
   }
 
   Future<void> _loadNotes() async {
@@ -252,6 +274,12 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           await Navigator.push(context, MaterialPageRoute(builder: (_) => QuotationForm(party: p)));
                           _load();
                         },
+                      ),
+                    if (p.doctype == 'CRM Lead')
+                      ActionChip(
+                        avatar: const Icon(Icons.handshake_outlined, size: 18),
+                        label: const Text('Convert to deal'),
+                        onPressed: () => _convertToDeal(p),
                       ),
                     if (profile.can('invoices'))
                       ActionChip(
