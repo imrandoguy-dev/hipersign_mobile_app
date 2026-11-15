@@ -311,7 +311,11 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                     ..._locationRows(p),
                   ]),
                 ),
-                if (_journey != null) JourneyCard(journey: _journey!),
+                if (_journey != null)
+                  JourneyCard(
+                    journey: _journey!,
+                    onChange: p.doctype == 'CRM Deal' || p.doctype == 'CRM Lead' ? () => _changeStatus(p) : null,
+                  ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Wrap(spacing: 8, runSpacing: 8, children: [
@@ -324,7 +328,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           _load();
                         },
                       ),
-                    if (p.doctype == 'CRM Deal' || p.doctype == 'CRM Lead')
+                    if (_journey == null && (p.doctype == 'CRM Deal' || p.doctype == 'CRM Lead'))
                       ActionChip(
                         avatar: const Icon(Icons.flag_outlined, size: 18),
                         label: Text('Status: ${p.status ?? '-'}'),

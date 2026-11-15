@@ -636,8 +636,11 @@ class _QuotationScreenState extends State<QuotationScreen> {
 
 /// Stage chip + journey card for the customer page.
 class JourneyCard extends StatelessWidget {
-  const JourneyCard({super.key, required this.journey});
+  const JourneyCard({super.key, required this.journey, this.onChange});
   final Journey journey;
+
+  /// Deals / leads: tap to change the status (stage).
+  final VoidCallback? onChange;
 
   static Color colorFor(String key, String state) {
     if (state == 'cancelled') return HsColors.cancelled;
@@ -653,7 +656,7 @@ class JourneyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = journey.stage;
-    return Container(
+    final card = Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -668,6 +671,17 @@ class JourneyCard extends StatelessWidget {
             const SizedBox(width: 6),
             const Text('Stage: ', style: TextStyle(fontWeight: FontWeight.w600)),
             Expanded(child: Text(s?.label ?? 'New', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
+            if (onChange != null)
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: HsColors.navy,
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: Colors.white.withValues(alpha: 0.6),
+                ),
+                onPressed: onChange,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Change'),
+              ),
           ]),
           if (s?.detail != null) Padding(padding: const EdgeInsets.only(top: 2, left: 24), child: Text(s!.detail!)),
           if (journey.steps.length > 1) ...[
@@ -697,5 +711,6 @@ class JourneyCard extends StatelessWidget {
         ]),
       ),
     );
+    return onChange == null ? card : GestureDetector(onTap: onChange, child: card);
   }
 }
