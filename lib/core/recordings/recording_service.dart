@@ -397,10 +397,15 @@ class RecordingService extends ChangeNotifier {
 
   /// Numbers of customers / leads / deals this phone already linked calls to - e.g. a lead
   /// created a minute ago from Google, before the next caller-ID refresh.
-  Map<String, List<String>> _knownFromEntries() => {
-        for (final e in _entries)
-          if (e.hasParty) _last(e.number): [e.partyDoctype!, e.party!, e.partyName ?? e.party!],
-      };
+  /// Only links from the last day: an old one may be stale (the number moved, or it was a
+  /// team member's number linked by mistake) - the ERP directory is the truth after that.
+  Map<String, List<String>> _knownFromEntries() {
+    final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+    return {
+      for (final e in _entries)
+        if (e.hasParty && e.startedAt.isAfter(cutoff)) _last(e.number): [e.partyDoctype!, e.party!, e.partyName ?? e.party!],
+    };
+  }
 
   Future<void> _useCallHistory(Repository repo) async {
     final now = DateTime.now();

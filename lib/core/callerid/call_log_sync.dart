@@ -37,9 +37,10 @@ Future<void> syncCallLog(Repository repo, String user, {bool force = false}) asy
 
   final appCalls = RecordingService.instance.entries;
   // Numbers already linked on this phone (e.g. a lead created minutes ago from Google).
+  final recent = DateTime.now().subtract(const Duration(hours: 24)); // older links may be stale
   final known = <String, List<String>>{
     for (final e in appCalls)
-      if (e.party != null && e.partyDoctype != null) _last9(e.number): [e.partyDoctype!, e.party!],
+      if (e.party != null && e.partyDoctype != null && e.startedAt.isAfter(recent)) _last9(e.number): [e.partyDoctype!, e.party!],
   };
   final items = <Map<String, dynamic>>[];
   var newest = lastSent.millisecondsSinceEpoch;
