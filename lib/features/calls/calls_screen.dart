@@ -17,6 +17,7 @@ import '../recordings/recording_widgets.dart';
 
 const _filters = {
   'all': 'All',
+  'new_reached': 'New leads reached',
   'new_not_reached': 'New leads not reached',
   'not_reached': 'All not reached',
   'connected': 'Connected',
@@ -127,9 +128,13 @@ class _CallsScreenState extends State<CallsScreen> {
     }
   }
 
-  /// "New leads not reached (12)" - how many to call back.
+  /// "New leads not reached (12)" - how many to call back; "New leads reached (8 today)".
   String _chipLabel(String key, String label) {
     final today = _today;
+    if (key == 'new_reached') {
+      final n = today?['new_reached'];
+      return n == null || n == 0 ? label : '$label ($n today)';
+    }
     final n = (key == 'new_not_reached' || key == 'not_reached') && today != null ? today[key] : null;
     return n == null || n == 0 ? label : '$label ($n)';
   }
