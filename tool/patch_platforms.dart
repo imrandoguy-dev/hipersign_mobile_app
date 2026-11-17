@@ -806,6 +806,8 @@ class MainActivity : FlutterActivity() {
                         "party" to known?.let { listOf(it.optString(2), it.optString(3), it.optString(0)) },
                         "sim" to c.getString(5),
                         "work" to CallerId.isWorkSim(c.getString(5), work),
+                        // On the SIM chosen in Settings (not just "no SIM chosen"): every call counts.
+                        "on_work_sim" to (work != null && !c.getString(5).isNullOrBlank() && c.getString(5) in work),
                     )
                 )
             }

@@ -485,7 +485,9 @@ class RecordingService extends ChangeNotifier {
     for (final r in rows!) {
       if (!connectedWorkCandidate(r) || !isWorkSimRow(r)) continue;
       final party = partyOf(r);
-      if (party == null) continue; // not an ERPNext number: personal call
+      // Not an ERPNext number: personal - unless it was on the chosen work SIM, where every
+      // call is work (saved with the number, linked when it becomes a lead).
+      if (party == null && !onChosenWorkSim(r)) continue;
       final date = (r['date'] as num).toInt();
       final number = r['number']?.toString() ?? '';
       final at = DateTime.fromMillisecondsSinceEpoch(date);
@@ -496,9 +498,9 @@ class RecordingService extends ChangeNotifier {
         id: '${_user.hashCode.toRadixString(16)}-log-${r['id']}-$date',
         number: number,
         startedAt: at,
-        partyDoctype: party[0],
-        party: party[1],
-        partyName: party[2],
+        partyDoctype: party?[0],
+        party: party?[1],
+        partyName: party?[2],
         incoming: (r['type'] as num?)?.toInt() == 1,
         callAt: at,
         callSeconds: (r['duration'] as num?)?.toInt() ?? 0,
@@ -524,7 +526,9 @@ class RecordingService extends ChangeNotifier {
         final info = await repo.lookupNumber(e.number);
         Party? party = info.linkable;
         final google = info.google;
-        if (party == null && google != null) {
+        // A new Google lead only for calls placed from Hipersign; other work-SIM calls with an
+        // unknown number are saved with the number and link once someone adds it.
+        if (party == null && google != null && !e.id.contains('-log-')) {
           party = await repo.createLead(phone: info.phone, name: google.name, google: google);
         }
         e.autoLinkTried = true;

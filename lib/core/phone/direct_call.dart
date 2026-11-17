@@ -207,6 +207,10 @@ Future<List<Map<String, dynamic>>?> readPhoneCallLog(DateTime since) async {
 /// False when the row was on a SIM that is not chosen as a work SIM (personal call).
 bool isWorkSimRow(Map<String, dynamic> row) => row['work'] != false;
 
+/// The call was on the work SIM chosen in Settings (so it is a work call even if the number
+/// isn't in ERP yet). False when no work SIM is chosen.
+bool onChosenWorkSim(Map<String, dynamic> row) => row['on_work_sim'] == true;
+
 // ------------------------------------------------------------ work SIM (Android)
 
 class SimCard {

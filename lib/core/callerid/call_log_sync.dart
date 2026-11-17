@@ -65,7 +65,10 @@ Future<void> syncCallLog(Repository repo, String user, {bool force = false}) asy
             .firstOrNull
         : null;
     final party = r['party'] is List ? (r['party'] as List).map((e) => e.toString()).toList() : known[_last9(number)];
-    if (party == null && fromApp == null) continue; // personal (or not known yet: retried later)
+    final workSim = onChosenWorkSim(r);
+    // Unknown numbers count only on the chosen work SIM; otherwise they may be personal
+    // (or not known yet: retried later).
+    if (party == null && fromApp == null && !workSim) continue;
     if (date > newest) newest = date;
     items.add({
       'key': key,
@@ -74,6 +77,7 @@ Future<void> syncCallLog(Repository repo, String user, {bool force = false}) asy
       'duration': (r['duration'] as num?)?.toInt() ?? 0,
       'direction': direction,
       'via_app': fromApp != null,
+      'work_sim': workSim,
       'party_doctype': fromApp?.partyDoctype ?? party?[0],
       'party': fromApp?.party ?? party?[1],
       'activity': fromApp?.activity,
