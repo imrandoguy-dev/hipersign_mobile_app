@@ -357,13 +357,25 @@ class Repository {
 
   // ------------------------------------------------------------ new numbers (Google Maps)
 
-  Future<Map<String, dynamic>> prospects({String tab = 'to_call', String? person, String? cursor}) async =>
+  Future<Map<String, dynamic>> prospects(
+          {String tab = 'to_call', String? person, String? place, String? industry, String? cursor}) async =>
       Map<String, dynamic>.from(await api.get('prospects.get_list', {
         'tab': tab,
         if (person != null) 'person': person,
+        if (place != null) 'place': place,
+        if (industry != null) 'industry': industry,
         if (cursor != null) 'cursor': cursor,
         'page_size': 50,
       }) as Map);
+
+  /// Places and industries (the business searched) among the numbers, with counts.
+  Future<({List<(String, int)> places, List<(String, int)> industries})> prospectFilters({String? person}) async {
+    final d = Map<String, dynamic>.from(await api.get('prospects.filters', {if (person != null) 'person': person}) as Map);
+    List<(String, int)> of(String k) => ((d[k] as List?) ?? const [])
+        .map((e) => ((e as Map)['value'].toString(), (e['count'] as num?)?.toInt() ?? 0))
+        .toList();
+    return (places: of('places'), industries: of('industries'));
+  }
 
   Future<List<MeetingPerson>> prospectCallers() async {
     final d = await api.get('prospects.callers');

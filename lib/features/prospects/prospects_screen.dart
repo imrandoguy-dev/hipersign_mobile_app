@@ -50,7 +50,11 @@ class _ProspectsScreenState extends State<ProspectsScreen> with SingleTickerProv
   static const _tabs = [('to_call', 'To call'), ('converted', 'Became leads'), ('not_interested', 'Not interested')];
   late final TabController _tc = TabController(length: _tabs.length, vsync: this);
   final Map<String, List<Prospect>?> _items = {};
+  final Map<String, String?> _next = {}; // tab -> cursor of the next page (null: all loaded)
+  final Set<String> _loadingMore = {};
   Map<String, dynamic> _counts = {};
+  String? _place; // filters (null = all)
+  String? _industry;
   String? _person; // managers: null = mine, 'all', or a caller
   String _personName = 'Mine';
   bool _manager = false;
@@ -95,22 +99,125 @@ class _ProspectsScreenState extends State<ProspectsScreen> with SingleTickerProv
     if (mounted) _load(_tabs[_tc.index].$1);
   }
 
-  Future<void> _load(String tab) async {
+  Future<void> _load(String tab, {bool more = false}) async {
+    final cursor = more ? _next[tab] : null;
+    if (more && (cursor == null || _loadingMore.contains(tab))) return;
+    if (more) setState(() => _loadingMore.add(tab));
     try {
-      final d = await context.read<SessionController>().repo.prospects(tab: tab, person: _person);
+      final d = await context
+          .read<SessionController>()
+          .repo
+          .prospects(tab: tab, person: _person, place: _place, industry: _industry, cursor: cursor);
       if (!mounted) return;
+      final page = ((d['items'] as List?) ?? const []).map((e) => Prospect(Map<String, dynamic>.from(e as Map))).toList();
       setState(() {
         _error = null;
-        _items[tab] = ((d['items'] as List?) ?? const []).map((e) => Prospect(Map<String, dynamic>.from(e as Map))).toList();
+        _items[tab] = more ? [...?_items[tab], ...page] : page;
+        _next[tab] = d['next_cursor']?.toString();
         _counts = Map<String, dynamic>.from((d['counts'] as Map?) ?? const {});
       });
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e);
+      if (!mounted) return;
+      if (more) {
+        showSnack(e.message, error: true);
+      } else {
+        setState(() => _error = e);
+      }
+    } finally {
+      if (more && mounted) setState(() => _loadingMore.remove(tab));
     }
+  }
+
+  /// Pick a place or industry to show only those numbers.
+  Future<void> _pickFilter({required bool place}) async {
+    final ({List<(String, int)> places, List<(String, int)> industries}) f;
+    try {
+      f = await context.read<SessionController>().repo.prospectFilters(person: _person);
+    } on ApiException catch (e) {
+      showSnack(e.message, error: true);
+      return;
+    }
+    if (!mounted) return;
+    final options = place ? f.places : f.industries;
+    final current = place ? _place : _industry;
+    final picked = await showModalBottomSheet<(bool, String?)>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+          child: ListView(shrinkWrap: true, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(place ? 'Place' : 'Industry', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.all_inclusive),
+              title: Text(place ? 'All places' : 'All industries'),
+              trailing: current == null ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(ctx, (true, null)),
+            ),
+            const Divider(),
+            if (options.isEmpty)
+              const Padding(padding: EdgeInsets.all(16), child: Text('Nothing to filter yet.')),
+            for (final o in options)
+              ListTile(
+                title: Text(o.$1),
+                subtitle: Text('${o.$2} number${o.$2 == 1 ? '' : 's'}'),
+                trailing: current == o.$1 ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(ctx, (true, o.$1)),
+              ),
+          ]),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (place) {
+        _place = picked.$2;
+      } else {
+        _industry = picked.$2;
+      }
+    });
+    _reloadAll();
+  }
+
+  Widget _filterBar() {
+    Widget chip(String label, String? value, bool place) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: InputChip(
+            avatar: Icon(place ? Icons.place_outlined : Icons.category_outlined, size: 18),
+            label: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: Text(value ?? label, overflow: TextOverflow.ellipsis),
+            ),
+            selected: value != null,
+            onPressed: () => _pickFilter(place: place),
+            onDeleted: value == null
+                ? null
+                : () {
+                    setState(() {
+                      if (place) {
+                        _place = null;
+                      } else {
+                        _industry = null;
+                      }
+                    });
+                    _reloadAll();
+                  },
+          ),
+        );
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(children: [chip('All places', _place, true), chip('All industries', _industry, false)]),
+    );
   }
 
   void _reloadAll() {
     _items.clear();
+    _next.clear();
     _load(_tabs[_tc.index].$1);
   }
 
@@ -186,6 +293,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> with SingleTickerProv
       if (p.lastCalled != null) fmtDayTime(p.lastCalled),
       if (_person != null && p.assignedName != null) p.assignedName!,
     ].join(' · ');
+    final tags = [if (_industry == null && p.search != null) p.search!, if (_place == null && p.place != null) p.place!].join(' · ');
     return Card(
       elevation: 0,
       color: p.status == 'Not Connected' ? HsColors.pending : HsColors.card,
@@ -201,6 +309,7 @@ class _ProspectsScreenState extends State<ProspectsScreen> with SingleTickerProv
                 Text(p.phone, style: const TextStyle(fontSize: 13.5)),
                 if (p.address != null)
                   Text(p.address!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: HsColors.textSecondary)),
+                if (tags.isNotEmpty) Text(tags, style: const TextStyle(fontSize: 12, color: HsColors.accent)),
                 const SizedBox(height: 2),
                 Text(info, style: const TextStyle(fontSize: 12, color: HsColors.textSecondary)),
               ]),
@@ -252,15 +361,30 @@ class _ProspectsScreenState extends State<ProspectsScreen> with SingleTickerProv
                     : null,
               ),
             ])
-          : ListView(padding: const EdgeInsets.only(top: 6, bottom: 90), children: [
-              if (tab == 'to_call')
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
-                  child: Text('A call that connects for more than 5 seconds makes it a lead automatically.',
-                      style: TextStyle(fontSize: 12.5, color: HsColors.textSecondary)),
-                ),
-              for (final p in items) _row(p, tab),
-            ]),
+          : NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                if (n.metrics.extentAfter < 600) _load(tab, more: true); // near the end: next page
+                return false;
+              },
+              child: ListView(padding: const EdgeInsets.only(top: 6, bottom: 90), children: [
+                if (tab == 'to_call')
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+                    child: Text('A call that connects for more than 5 seconds makes it a lead automatically.',
+                        style: TextStyle(fontSize: 12.5, color: HsColors.textSecondary)),
+                  ),
+                for (final p in items) _row(p, tab),
+                if (_next[tab] != null)
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Center(
+                      child: _loadingMore.contains(tab)
+                          ? const CircularProgressIndicator()
+                          : TextButton(onPressed: () => _load(tab, more: true), child: const Text('Show more')),
+                    ),
+                  ),
+              ]),
+            ),
     );
   }
 
@@ -287,7 +411,10 @@ class _ProspectsScreenState extends State<ProspectsScreen> with SingleTickerProv
         ],
         bottom: TabBar(controller: _tc, isScrollable: true, tabs: [for (final t in _tabs) Tab(text: label(t))]),
       ),
-      body: TabBarView(controller: _tc, children: [for (final t in _tabs) _list(t.$1)]),
+      body: Column(children: [
+        _filterBar(),
+        Expanded(child: TabBarView(controller: _tc, children: [for (final t in _tabs) _list(t.$1)])),
+      ]),
       floatingActionButton: _manager
           ? FloatingActionButton.extended(
               onPressed: () async {
