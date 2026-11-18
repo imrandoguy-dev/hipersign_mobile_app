@@ -9,6 +9,7 @@ import '../../shared/models/team.dart';
 import '../../shared/widgets/common.dart';
 import '../activities/activity_detail_screen.dart';
 import '../calls/calls_screen.dart';
+import '../customers/customer_detail_screen.dart';
 import '../development/development_screen.dart';
 import 'day_timeline.dart';
 
@@ -153,7 +154,47 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                   label: Text('Call back ${r.newNotReached} new lead${r.newNotReached == 1 ? '' : 's'} not reached'),
                 ),
               ),
+            if (r.deals.isNotEmpty || r.followupMeetings.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                _Stat(label: 'New deals', value: '${r.deals.length}', color: r.deals.isEmpty ? HsColors.card : HsColors.completed),
+                const SizedBox(width: 8),
+                _Stat(
+                  label: 'Follow-up → meeting',
+                  value: '${r.followupMeetings.length}',
+                  color: r.followupMeetings.isEmpty ? HsColors.card : HsColors.completed,
+                ),
+              ]),
+            ],
             if (r.timeline != null) DayTimelineCard(key: ValueKey('tl-${r.user}-${r.date}'), t: r.timeline!),
+            if (r.deals.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('New deals (${r.deals.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              for (final d in r.deals)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.handshake_outlined, color: HsColors.accent),
+                  title: Text(d.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text([if (d.at.isNotEmpty) 'Made at ${d.at}', if (d.status.isNotEmpty) d.status].join(' · ')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => CustomerDetailScreen(doctype: 'CRM Deal', name: d.id, title: d.name))),
+                ),
+            ],
+            if (r.followupMeetings.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Follow-ups that got a meeting (${r.followupMeetings.length})',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              for (final f in r.followupMeetings)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event_available, color: HsColors.accent),
+                  title: Text(f.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('${f.followupTitle} → meeting${f.meetingAt.isNotEmpty ? ' on ${f.meetingAt}' : ''}'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ActivityDetailScreen(activityId: f.meeting))),
+                ),
+            ],
             if (r.items.isEmpty)
               const EmptyState(icon: Icons.event_available, title: 'Nothing was due', message: 'No follow-ups, meetings, trainings or tasks for this day.'),
             if (notDone.isNotEmpty) ...[
@@ -273,7 +314,7 @@ class _TeamReportScreenState extends State<TeamReportScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                '${items.length} people · ${items.fold<int>(0, (a, r) => a + r.done)} done · ${items.fold<int>(0, (a, r) => a + r.notDone)} not done · ${items.fold<int>(0, (a, r) => a + r.callsMade)} calls',
+                '${items.length} people · ${items.fold<int>(0, (a, r) => a + r.done)} done · ${items.fold<int>(0, (a, r) => a + r.notDone)} not done · ${items.fold<int>(0, (a, r) => a + r.callsMade)} calls · ${items.fold<int>(0, (a, r) => a + r.deals.length)} new deals · ${items.fold<int>(0, (a, r) => a + r.followupMeetings.length)} follow-ups → meetings',
                 style: const TextStyle(color: HsColors.textSecondary),
               ),
             ),
@@ -293,6 +334,15 @@ class _TeamReportScreenState extends State<TeamReportScreen> {
                     if (r.newNotReached > 0) '${r.newNotReached} new not reached',
                     if (r.meetingsAssigned > 0 || (r.meetingTarget ?? 0) > 0) '${r.meetingsAssigned}${(r.meetingTarget ?? 0) > 0 ? '/${r.meetingTarget}' : ''} meetings',
                   ].join(' · ')),
+                  if (r.deals.isNotEmpty || r.followupMeetings.isNotEmpty)
+                    Text(
+                      [
+                        if (r.deals.isNotEmpty) '${r.deals.length} new deal${r.deals.length == 1 ? '' : 's'}',
+                        if (r.followupMeetings.isNotEmpty)
+                          '${r.followupMeetings.length} follow-up${r.followupMeetings.length == 1 ? '' : 's'} → meeting',
+                      ].join(' · '),
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: HsColors.accent),
+                    ),
                   if (r.timeline != null) ...[
                     const SizedBox(height: 6),
                     DayTimelineBar(t: r.timeline!, height: 16, showHours: false),

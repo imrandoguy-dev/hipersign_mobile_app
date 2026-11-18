@@ -304,7 +304,15 @@ class DailyReport {
     this.timeline,
     this.callCounted,
     this.callUnit = 'calls',
+    this.deals = const [],
+    this.followupMeetings = const [],
   });
+
+  /// Deals this person made that day.
+  final List<ReportDeal> deals;
+
+  /// Follow-ups that day that ended with a meeting booked.
+  final List<FollowupMeeting> followupMeetings;
 
   /// Calls that count towards the target, the way it is set in ERP (e.g. only new connected).
   final int? callCounted;
@@ -343,7 +351,31 @@ class DailyReport {
         callCounted: (j['call_counted'] as num?)?.toInt(),
         callUnit: j['call_unit']?.toString() ?? 'calls',
         timeline: j['timeline'] is Map ? DayTimeline.fromJson(Map<String, dynamic>.from(j['timeline'] as Map)) : null,
+        deals: ((j['deals'] as List?) ?? const []).map((e) => ReportDeal(Map<String, dynamic>.from(e as Map))).toList(),
+        followupMeetings: ((j['followup_meetings'] as List?) ?? const [])
+            .map((e) => FollowupMeeting(Map<String, dynamic>.from(e as Map)))
+            .toList(),
       );
+}
+
+class ReportDeal {
+  ReportDeal(this.j);
+  final Map<String, dynamic> j;
+  String get id => j['id']?.toString() ?? '';
+  String get name => j['name']?.toString() ?? id;
+  String get at => j['at']?.toString() ?? '';
+  String get status => j['status']?.toString() ?? '';
+}
+
+class FollowupMeeting {
+  FollowupMeeting(this.j);
+  final Map<String, dynamic> j;
+  String get partyDoctype => j['party_doctype']?.toString() ?? '';
+  String get party => j['party']?.toString() ?? '';
+  String get name => j['name']?.toString() ?? party;
+  String get followupTitle => j['followup_title']?.toString() ?? 'Follow-up';
+  String get meeting => j['meeting']?.toString() ?? '';
+  String get meetingAt => j['meeting_at']?.toString() ?? '';
 }
 
 /// A span on the day line (minutes from midnight).
